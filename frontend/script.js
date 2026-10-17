@@ -1,71 +1,20 @@
 const searchBtn = document.getElementById("search-btn");
 const queryInput = document.getElementById("query");
-const chkSvk = document.getElementById("chk-svk");
-const chkIa = document.getElementById("chk-ia");
-const chkManasu = document.getElementById("chk-manasu");
-const chkTtd = document.getElementById("chk-ttd");
+const sourceBoxes = document.querySelectorAll(
+  ".checkbox-label input[data-source]",
+);
 const resultFilter = document.getElementById("result-filter");
 const resultsContainer = document.getElementById("results");
-
-// Short library labels for the UI. The full names stay in the data and in the API
-// calls; only what is displayed is abbreviated.
-const SOURCE_ABBR = {
-  "Internet Archive": "IA",
-  "SVK": "SVK",
-  "Manasu Foundation": "MF",
-  "TTD Ebooks": "TTD",
-};
-const abbr = (source) => SOURCE_ABBR[source] || source;
 const statTotal = document.getElementById("stat-total");
 const resultsCountLabel = document.getElementById("results-count-label");
 
-// ---------------------------------------------------------
-window.addEventListener("DOMContentLoaded", async () => {
-  // sessionStorage నుండి పెండింగ్ డౌన్‌లోడ్ లేదా సెర్చ్‌ని చెక్ చేయడం (URL క్లీన్‌గా ఉంటుంది)
-  const pendingDlUrl = sessionStorage.getItem('pending_dl_url');
-  const pendingDlTitle = sessionStorage.getItem('pending_dl_title');
-  const pendingDlSource = sessionStorage.getItem('pending_dl_source');
-
-  if (pendingDlUrl && pendingDlTitle) {
-    sessionStorage.removeItem('pending_dl_url');
-    sessionStorage.removeItem('pending_dl_title');
-    sessionStorage.removeItem('pending_dl_source');
-
-    queryInput.value = pendingDlTitle;
-    resultsContainer.innerHTML = "";
-    resultsCountLabel.innerText = "రీ-డౌన్‌లోడ్ కోసం సిద్ధంగా ఉన్న పుస్తకం";
-
-    const card = document.createElement("div");
-    card.className = "book-card";
-
-    let badgeClass = "badge-svk";
-    if (pendingDlSource === "Internet Archive") badgeClass = "badge-ia";
-    if (pendingDlSource === "Manasu Foundation") badgeClass = "badge-manasu";
-    if (pendingDlSource === "TTD Ebooks") badgeClass = "badge-ttd";
-
-    card.innerHTML = `
-        <div class="book-info">
-            <div class="no-cover"><i class="fa-solid fa-book"></i></div>
-            <div class="book-details-content">
-                <span class="badge ${badgeClass}" title="${pendingDlSource}">${abbr(pendingDlSource)}</span>
-                <div class="book-title">${pendingDlTitle}</div>
-            </div>
-        </div>
-        <button class="action-btn" onclick="savePdfLocally('${pendingDlUrl}', '${pendingDlTitle.replace(/'/g, "\\'")}', '${pendingDlSource}', this)">
-            <i class="fa-solid fa-download"></i> మళ్లీ సేవ్ చేయి
-        </button>
-    `;
-    resultsContainer.appendChild(card);
-    return;
-  }
-
-  const pendingSearch = sessionStorage.getItem('pending_search');
-  if (pendingSearch) {
-    sessionStorage.removeItem('pending_search');
-    queryInput.value = pendingSearch;
-    performSearch();
-  }
-});
+// Libraries are identified by short codes, and the reader-facing label arrives with
+// each result from the server. Nothing in this file names them.
+const chosenSources = () =>
+  Array.from(sourceBoxes)
+    .filter((box) => box.checked)
+    .map((box) => box.dataset.source)
+    .join(",");
 
 // ఫిల్టర్ మారినప్పుడు వెంటనే మళ్లీ చూపించడం — సర్వర్‌కి కొత్త రిక్వెస్ట్ అవసరం లేదు.
 if (resultFilter) {
@@ -86,10 +35,7 @@ async function performSearch(page = 1) {
   // ఒకవేళ మొదటిసారి సెర్చ్ చేస్తుంటే లేదా క్వెరీ మారితేనే సర్వర్‌కి రిక్వెస్ట్ వెళ్తుంది
   if (page === 1 || allSearchResults.length === 0) {
     const query = queryInput.value.trim();
-    const useSvk = chkSvk.checked;
-    const useIa = chkIa.checked;
-    const useManasu = chkManasu.checked;
-    const useTtd = chkTtd.checked;
+    const sources = chosenSources();
 
     if (!query) {
       Swal.fire({
@@ -114,7 +60,7 @@ async function performSearch(page = 1) {
       if (resultFilter) resultFilter.value = "";
       // No limit: the server returns everything it finds and we paginate locally.
       const response = await fetch(
-        `/search?query=${encodeURIComponent(query)}&use_svk=${useSvk}&use_ia=${useIa}&use_manasu=${useManasu}&use_ttd=${useTtd}`
+        `/search?query=${encodeURIComponent(query)}&sources=${encodeURIComponent(sources)}`
       );
       const data = await response.json();
 
@@ -175,10 +121,7 @@ function renderCurrentPageResults() {
         ? `<img src="${book.cover_image}" alt="Cover" class="book-cover" onerror="this.outerHTML='<div class=\\'no-cover\\'>ప్రతి లేదు</div>'">`
         : `<div class="no-cover">ప్రతి లేదు</div>`;
 
-      let badgeClass = "badge-svk";
-      if (book.source === "Internet Archive") badgeClass = "badge-ia";
-      if (book.source === "Manasu Foundation") badgeClass = "badge-manasu";
-      if (book.source === "TTD Ebooks") badgeClass = "badge-ttd";
+      const badgeClass = `src-${book.source}`;
 
       // కేవలం టైటిల్, రచయిత, సంవత్సరం మాత్రమే (వివరణ తొలగించబడింది)
       let authorHtml = book.author ? `<div class="book-author"><i class="fa-solid fa-pen-nib"></i> ${book.author}</div>` : '';
@@ -188,7 +131,7 @@ function renderCurrentPageResults() {
               <div class="book-info">
                   ${coverHtml}
                   <div class="book-details-content">
-                      <span class="badge ${badgeClass}" title="${book.source}">${abbr(book.source)}</span>
+                      <span class="badge ${badgeClass}">${book.source_label || ""}</span>
                       <div class="book-title">${book.title} ${yearHtml}</div>
                       ${authorHtml}
                   </div>

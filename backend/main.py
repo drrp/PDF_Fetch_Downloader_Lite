@@ -83,6 +83,16 @@ ia_scraper = InternetArchiveScraper()
 manasu_scraper = ManasuFoundationScraper()
 ttd_scraper = TTDScraper()
 
+# Libraries are addressed by short codes on the wire, so neither the page source nor
+# the network traffic spells out where a book came from. The label is what the reader
+# sees; the code is all the browser ever handles.
+LIBRARIES = {
+    "a": ("IA", ia_scraper),
+    "b": ("SVK", svk_scraper),
+    "c": ("MF", manasu_scraper),
+    "d": ("TTD", ttd_scraper),
+}
+
 
 @app.post("/reset-app")
 def reset_app():
@@ -101,27 +111,28 @@ def read_root():
 @app.get("/search")
 def search(
     query: str = Query(...),
-    use_svk: bool = Query(True), use_ia: bool = Query(True),
-    use_manasu: bool = Query(True), use_ttd: bool = Query(True),
+    sources: str = Query(""),
     page: int = Query(1), limit: int = Query(0),
 ):
-    # The four libraries are independent, so query them at the same time: the
-    # request now takes about as long as the slowest library, not the sum of all.
-    sources = []
-    if use_svk: sources.append(("SVK", svk_scraper))
-    if use_ia: sources.append(("Internet Archive", ia_scraper))
-    if use_manasu: sources.append(("Manasu Foundation", manasu_scraper))
-    if use_ttd: sources.append(("TTD Ebooks", ttd_scraper))
+    # Which libraries to query, as a comma-separated list of codes. Empty or unknown
+    # means all of them.
+    codes = [c.strip() for c in sources.split(",") if c.strip() in LIBRARIES]
+    if not codes:
+        codes = list(LIBRARIES)
 
+    # The libraries are independent, so query them at the same time: the request
+    # takes about as long as the slowest one, not the sum of all.
     results = []
-    if sources:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(sources)) as ex:
-            futures = [(name, ex.submit(s.search, query)) for name, s in sources]
-            for name, fut in futures:          # collect in a fixed order
-                try:
-                    results.extend(fut.result())
-                except Exception as e:
-                    print(f"{name} search error: {e}")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(codes)) as ex:
+        futures = [(code, ex.submit(LIBRARIES[code][1].search, query)) for code in codes]
+        for code, fut in futures:              # collected in a fixed order
+            try:
+                for book in fut.result():
+                    book["source"] = code
+                    book["source_label"] = LIBRARIES[code][0]
+                    results.append(book)
+            except Exception as e:
+                print(f"search error [{code}]: {e}")
 
     total_items = len(results)
     # limit=0 (the default) returns everything; the frontend paginates locally.
@@ -140,25 +151,25 @@ def search(
 
 
 @app.get("/download-book")
-def download_book(book_page_url: str = Query(...), title: str = Query(...), source: str = Query("SVK")):
+def download_book(book_page_url: str = Query(...), title: str = Query(...), source: str = Query("b")):
+    entry = LIBRARIES.get(source)
+    if entry is None:
+        return {"status": "error", "message": "Unknown source."}
+
     safe_title = re.sub(r'[\\/*?:"<>|]', "", title).strip()[:40] or "book"
     filename = f"{safe_title}_{uuid.uuid4().hex[:6]}.pdf"
     filepath = os.path.join(DOWNLOAD_DIR, filename)
 
     try:
-        if source == "Internet Archive":
-            ia_scraper.download(book_page_url, title, filepath)
-        elif source == "Manasu Foundation":
-            manasu_scraper.consult_download(book_page_url, title, filepath) if hasattr(manasu_scraper, 'consult_download') else manasu_scraper.download(book_page_url, title, filepath)
-        elif source == "TTD Ebooks":
-            ttd_scraper.download(book_page_url, title, filepath)
+        scraper = entry[1]
+        if hasattr(scraper, "consult_download"):
+            scraper.consult_download(book_page_url, title, filepath)
         else:
-            svk_scraper.download(book_page_url, title, filepath)
+            scraper.download(book_page_url, title, filepath)
 
         return {
             "status": "success",
             "message": "పుస్తకం విజయవంతంగా డౌన్‌లోడ్ చేయబడింది!",
-            "file_url": f"/downloads/{filename}",
             "filename": filename,
             "download_url": f"/download-file?filename={quote(filename)}",
         }

@@ -489,22 +489,23 @@ main.wrap {
   white-space: nowrap;
 }
 
-.badge-ia {
+/* Source badge colours, keyed by the library's short code. */
+.src-a {
   background: #e8f1fb;
   color: #1d4ed8;
 }
 
-.badge-svk {
+.src-b {
   background: #e9f7ef;
   color: #177245;
 }
 
-.badge-manasu {
+.src-c {
   background: #fdf0e4;
   color: #b45309;
 }
 
-.badge-ttd {
+.src-d {
   background: #fbe9ec;
   color: #9b1c2e;
 }
