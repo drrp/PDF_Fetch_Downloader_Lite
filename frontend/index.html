@@ -37,10 +37,29 @@
           </span>
         </a>
 
-        <div class="header-stats">
-          <div class="stat-card">
-            <span id="stat-total" class="number">0</span>
-            <span class="label">పుస్తకాలు</span>
+        <div class="header-right">
+          <div class="header-stats">
+            <div class="stat-card">
+              <span id="stat-total" class="number">0</span>
+              <span class="label">పుస్తకాలు</span>
+            </div>
+          </div>
+
+          <div id="auth-section" class="auth-section">
+            <a href="/login/google" id="google-login-btn" class="google-login-btn">
+              <i class="fa-brands fa-google"></i> లాగిన్
+            </a>
+
+            <div id="user-profile-card" class="user-profile-card" style="display: none">
+              <img id="user-avatar" src="" alt="" class="user-avatar" />
+              <div class="user-details">
+                <span id="user-name" class="user-name"></span>
+                <a href="/logout" class="logout-link">లాగౌట్</a>
+              </div>
+              <a href="/profile" class="profile-link">
+                <i class="fa-solid fa-user"></i> ప్రొఫైల్
+              </a>
+            </div>
           </div>
         </div>
       </div>

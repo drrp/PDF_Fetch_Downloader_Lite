@@ -1,15 +1,24 @@
 import warnings
 warnings.filterwarnings("ignore", message=".*httpx module is deprecated.*")
+warnings.filterwarnings("ignore", module="authlib")
 
 import concurrent.futures
 import os
 import re
 import uuid
+from datetime import datetime
 from urllib.parse import quote
 
-from fastapi import FastAPI, Query
-from fastapi.responses import FileResponse, Response
+import psycopg2
+import pytz
+from psycopg2.extras import RealDictCursor
+
+from authlib.integrations.starlette_client import OAuth
+from dotenv import load_dotenv
+from fastapi import FastAPI, Query, Request
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
 try:
     import rcssmin
@@ -22,12 +31,80 @@ from backend.archive import InternetArchiveScraper
 from backend.manasu import ManasuFoundationScraper
 from backend.ttd import TTDScraper
 
+load_dotenv(override=True)
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 FRONTEND_INDEX = os.path.join(FRONTEND_DIR, "index.html")
 DOWNLOAD_DIR = os.path.join(BASE_DIR, "downloads")
 
+# Supabase (Postgres) connection string. Holds the users and activity tables.
+DB_URL = os.getenv("DATABASE_URL")
+
+# --- Config (override any of these via environment variables) ---
+# Email that gets the admin dashboard.
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "rpsarma9247@gmail.com")
+# Send the login cookie over HTTPS only. Set COOKIE_HTTPS_ONLY=false for local HTTP.
+COOKIE_HTTPS_ONLY = os.getenv("COOKIE_HTTPS_ONLY", "true").strip().lower() in ("1", "true", "yes", "on")
+
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+
+# --- Startup diagnostics: prints only whether each variable is present, never its value ---
+print(
+    "Startup config check ->",
+    "DATABASE_URL:", bool(DB_URL),
+    "| SESSION_SECRET_KEY:", bool(os.getenv("SESSION_SECRET_KEY")),
+    "| GOOGLE_CLIENT_ID:", bool(os.getenv("GOOGLE_CLIENT_ID")),
+    "| GOOGLE_CLIENT_SECRET:", bool(os.getenv("GOOGLE_CLIENT_SECRET")),
+)
+
+
+def get_db_connection():
+    if not DB_URL:
+        raise Exception("DATABASE_URL environment variable is not set!")
+    return psycopg2.connect(DB_URL)
+
+
+def init_db():
+    if not DB_URL:
+        print("Warning: DATABASE_URL is not set.")
+        return
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                email TEXT PRIMARY KEY,
+                name TEXT,
+                picture TEXT,
+                last_login TEXT,
+                is_active BOOLEAN DEFAULT FALSE
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS activities (
+                id SERIAL PRIMARY KEY,
+                email TEXT,
+                name TEXT,
+                picture TEXT,
+                action TEXT,
+                details TEXT,
+                time TEXT,
+                status TEXT DEFAULT 'Success'
+            )
+        ''')
+
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error initializing DB: {e}")
+
+
+init_db()
+
 
 class MinifiedStaticFiles(StaticFiles):
     """Serve JS and CSS minified.
@@ -75,6 +152,22 @@ app = FastAPI(
     openapi_url=None,
 )
 
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.getenv("SESSION_SECRET_KEY", "your-secret-key"),
+    same_site="lax",
+    https_only=COOKIE_HTTPS_ONLY,
+)
+
+oauth = OAuth()
+oauth.register(
+    name="google",
+    client_id=os.getenv("GOOGLE_CLIENT_ID"),
+    client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_kwargs={"scope": "openid email profile"},
+)
+
 if os.path.exists(FRONTEND_DIR):
     app.mount("/static", MinifiedStaticFiles(directory=FRONTEND_DIR), name="static")
 
@@ -94,6 +187,193 @@ LIBRARIES = {
 }
 
 
+def log_user_activity(request: Request, action_type: str, details: str, status: str = "Success"):
+    """Record what a signed-in reader did, for the admin dashboard."""
+    user = request.session.get("user")
+    if not user:
+        return
+    try:
+        IST = pytz.timezone("Asia/Kolkata")
+        current_time = datetime.now(IST).strftime("%d-%m-%Y %I:%M %p")
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO activities (email, name, picture, action, details, time, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ''', (user.get("email"), user.get("name"), user.get("picture"),
+              action_type, details, current_time, status))
+        cursor.execute('UPDATE users SET is_active = TRUE WHERE email = %s', (user.get("email"),))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print("DB Error logging activity:", e)
+
+
+# ---------------------------------------------------------------- sign in / out
+
+@app.get("/login/google")
+async def login(request: Request):
+    redirect_uri = request.url_for("auth")
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+
+@app.get("/auth/callback")
+async def auth(request: Request):
+    try:
+        token = await oauth.google.authorize_access_token(request)
+        user_info = token.get("userinfo") or token.get("user_info")
+        if not user_info:
+            resp = await oauth.google.get(
+                "https://www.googleapis.com/oauth2/v3/userinfo", token=token)
+            user_info = resp.json()
+
+        if user_info and user_info.get("email"):
+            user_dict = {
+                "name": user_info.get("name"),
+                "email": user_info.get("email"),
+                "picture": user_info.get("picture"),
+            }
+            request.session["user"] = user_dict
+
+            conn = get_db_connection()
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            IST = pytz.timezone("Asia/Kolkata")
+            login_time = datetime.now(IST).strftime("%d-%m-%Y %I:%M %p")
+
+            cursor.execute("SELECT email FROM users WHERE email = %s", (user_dict.get("email"),))
+            existing = cursor.fetchone()
+
+            if existing:
+                cursor.execute('''
+                    UPDATE users SET name = %s, picture = %s, last_login = %s WHERE email = %s
+                ''', (user_dict.get("name"), user_dict.get("picture"),
+                      login_time, user_dict.get("email")))
+            else:
+                cursor.execute('''
+                    INSERT INTO users (email, name, picture, last_login, is_active)
+                    VALUES (%s, %s, %s, %s, TRUE)
+                ''', (user_dict.get("email"), user_dict.get("name"),
+                      user_dict.get("picture"), login_time))
+
+            conn.commit()
+            conn.close()
+
+            if user_dict.get("email") == ADMIN_EMAIL:
+                return RedirectResponse(url="/admin", status_code=303)
+    except Exception as e:
+        print(f"OAuth Error: {e}")
+
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.get("/logout")
+def logout(request: Request):
+    user = request.session.get("user")
+    if user:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("UPDATE users SET is_active = FALSE WHERE email = %s", (user.get("email"),))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print("DB Error on logout:", e)
+    request.session.clear()
+    return RedirectResponse(url="/")
+
+
+@app.get("/api/current-user")
+def get_current_user(request: Request):
+    user = request.session.get("user")
+    if not user:
+        return {"logged_in": False}
+    return {
+        "logged_in": True,
+        "name": user.get("name"),
+        "email": user.get("email"),
+        "picture": user.get("picture"),
+        "is_admin": (user.get("email") == ADMIN_EMAIL),
+    }
+
+
+# ---------------------------------------------------------------- profile / admin
+
+@app.get("/profile")
+def user_profile_page(request: Request):
+    if not request.session.get("user"):
+        return RedirectResponse(url="/login/google", status_code=303)
+    page = os.path.join(FRONTEND_DIR, "profile.html")
+    return FileResponse(page) if os.path.exists(page) else {"error": "profile.html not found"}
+
+
+@app.get("/user/activity-json")
+def get_user_activity_json(request: Request):
+    user = request.session.get("user")
+    if not user:
+        return {"error": "Unauthorized"}
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute(
+            "SELECT action, details, time, status FROM activities "
+            "WHERE email = %s ORDER BY id DESC", (user.get("email"),))
+        activities = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        return {
+            "user": user,
+            "stats": {
+                "searches": sum(1 for a in activities if a["action"] == "Search"),
+                "downloads": sum(1 for a in activities
+                                 if a["action"] == "Download" and a["status"] == "Success"),
+            },
+            "activities": activities,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/admin")
+def admin_dashboard(request: Request):
+    user = request.session.get("user")
+    if not user or user.get("email") != ADMIN_EMAIL:
+        return RedirectResponse(url="/")
+    page = os.path.join(FRONTEND_DIR, "admin.html")
+    return FileResponse(page) if os.path.exists(page) else {"error": "admin.html not found"}
+
+
+@app.get("/admin/users-json")
+def get_admin_users_json(request: Request):
+    user = request.session.get("user")
+    if not user or user.get("email") != ADMIN_EMAIL:
+        return {"error": "Unauthorized Access"}
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("SELECT * FROM users")
+        users = [dict(row) for row in cursor.fetchall()]
+        cursor.execute("SELECT * FROM activities ORDER BY id DESC")
+        activities = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        return {
+            "total_users": len(users),
+            "users": users,
+            "activities": activities,
+            "stats": {
+                "searches": sum(1 for a in activities if a["action"] == "Search"),
+                "downloads": sum(1 for a in activities if a["action"] == "Download"),
+                "total_actions": len(activities),
+            },
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ---------------------------------------------------------------- app
+
 @app.post("/reset-app")
 def reset_app():
     # The dashboard's Reset button reloads the page client-side; this endpoint
@@ -102,7 +382,12 @@ def reset_app():
 
 
 @app.get("/")
-def read_root():
+def read_root(request: Request):
+    if not request.session.get("user"):
+        login_page = os.path.join(FRONTEND_DIR, "login.html")
+        if os.path.exists(login_page):
+            return FileResponse(login_page)
+        return RedirectResponse(url="/login/google", status_code=303)
     if os.path.exists(FRONTEND_INDEX):
         return FileResponse(FRONTEND_INDEX)
     return {"error": "index.html not found"}
@@ -110,6 +395,7 @@ def read_root():
 
 @app.get("/search")
 def search(
+    request: Request,
     query: str = Query(...),
     sources: str = Query(""),
     page: int = Query(1), limit: int = Query(0),
@@ -135,6 +421,8 @@ def search(
                 print(f"search error [{code}]: {e}")
 
     total_items = len(results)
+    log_user_activity(request, "Search", f"వెతికిన పదం: '{query}' — {total_items} ఫలితాలు")
+
     # limit=0 (the default) returns everything; the frontend paginates locally.
     if limit and limit > 0:
         start_idx = (page - 1) * limit
@@ -151,7 +439,11 @@ def search(
 
 
 @app.get("/download-book")
-def download_book(book_page_url: str = Query(...), title: str = Query(...), source: str = Query("b")):
+def download_book(
+    request: Request,
+    book_page_url: str = Query(...), title: str = Query(...),
+    source: str = Query("b"),
+):
     entry = LIBRARIES.get(source)
     if entry is None:
         return {"status": "error", "message": "Unknown source."}
@@ -167,6 +459,7 @@ def download_book(book_page_url: str = Query(...), title: str = Query(...), sour
         else:
             scraper.download(book_page_url, title, filepath)
 
+        log_user_activity(request, "Download", f"డౌన్‌లోడ్: '{title}' ({entry[0]})", "Success")
         return {
             "status": "success",
             "message": "పుస్తకం విజయవంతంగా డౌన్‌లోడ్ చేయబడింది!",
@@ -174,6 +467,7 @@ def download_book(book_page_url: str = Query(...), title: str = Query(...), sour
             "download_url": f"/download-file?filename={quote(filename)}",
         }
     except Exception as e:
+        log_user_activity(request, "Download", f"విఫలం: '{title}' ({entry[0]}) | {e}", "Failed")
         return {"status": "error", "message": str(e)}
 
 

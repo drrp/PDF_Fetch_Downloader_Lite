@@ -357,3 +357,37 @@ function confirmAppReset() {
 queryInput.addEventListener("keypress", (e) => {
   if (e.key === "Enter") performSearch();
 });
+
+// సైన్ ఇన్ చేసిన యూజర్ వివరాలను చూపించడం (లాగిన్ బటన్ / ప్రొఫైల్ కార్డ్).
+async function checkLoginStatus() {
+  try {
+    const data = await fetch("/api/current-user").then((r) => r.json());
+    if (!data.logged_in) return;
+
+    const loginBtn = document.getElementById("google-login-btn");
+    if (loginBtn) loginBtn.style.display = "none";
+
+    const card = document.getElementById("user-profile-card");
+    if (!card) return;
+    card.style.display = "flex";
+
+    const avatar = document.getElementById("user-avatar");
+    if (avatar && data.picture) avatar.src = data.picture;
+
+    const nameEl = document.getElementById("user-name");
+    if (nameEl) nameEl.textContent = data.name || "";
+
+    if (data.is_admin && !document.getElementById("admin-link")) {
+      const adminLink = document.createElement("a");
+      adminLink.id = "admin-link";
+      adminLink.className = "profile-link admin-link";
+      adminLink.href = "/admin";
+      adminLink.innerHTML = '<i class="fa-solid fa-gauge"></i> అడ్మిన్';
+      card.appendChild(adminLink);
+    }
+  } catch (e) {
+    // లాగిన్ కాలేదు, లేదా చెక్ విఫలమైంది — లాగిన్ బటన్ అలాగే ఉంటుంది.
+  }
+}
+
+window.addEventListener("DOMContentLoaded", checkLoginStatus);

@@ -752,3 +752,114 @@ main.wrap {
     font-size: 13.5px;
   }
 }
+
+/* ============================ SIGNED-IN USER ============================ */
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.auth-section {
+  display: flex;
+  align-items: center;
+}
+
+.google-login-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  height: 44px;
+  padding: 0 18px;
+  font-family: "Noto Sans Telugu", sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  background: #fff;
+  border: 1.5px solid var(--line);
+  border-radius: 11px;
+  text-decoration: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.google-login-btn:hover {
+  border-color: var(--maroon);
+  box-shadow: 0 8px 18px -12px rgba(92, 22, 32, 0.6);
+}
+
+.google-login-btn i {
+  color: #4285f4;
+}
+
+.user-profile-card {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 6px 10px 6px 6px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+.user-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--maroon);
+  background: #f1ece3;
+}
+
+.user-details {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  min-width: 0;
+}
+
+.user-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink);
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logout-link {
+  font-family: "Noto Sans Telugu", sans-serif;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #b3202c;
+  text-decoration: none;
+}
+
+.logout-link:hover {
+  text-decoration: underline;
+}
+
+.profile-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font-family: "Noto Sans Telugu", sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, var(--maroon), var(--maroon-600));
+  border-radius: 9px;
+  text-decoration: none;
+}
+
+.profile-link:hover {
+  filter: brightness(1.08);
+}
+
+.admin-link {
+  background: linear-gradient(135deg, #241f1c, #4a3f38);
+}

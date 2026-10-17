@@ -1,9 +1,16 @@
 fastapi
 uvicorn
+python-multipart
+authlib
+python-dotenv
 requests
+itsdangerous
+httpx
 beautifulsoup4
 pydantic
 pypdf
 gdown
+pytz
+psycopg2-binary
 rjsmin
 rcssmin
