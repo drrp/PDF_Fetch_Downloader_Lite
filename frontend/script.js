@@ -233,140 +233,53 @@ function changePage(page) {
 }
 
 async function savePdfLocally(url, title, source, btnElement) {
-  Swal.fire({
-    title: "పుస్తకం డౌన్‌లోడ్ అవుతోంది",
-    html: `
-          <div style="margin: 20px 0; text-align: center;">
-              <p style="color: #0f172a; font-size: 15px; font-weight: 600; margin-bottom: 15px; line-height: 1.4;">"${title}"</p>
-              
-              <div id="progress-bar-container" style="background: #e2e8f0; border-radius: 6px; overflow: hidden; height: 24px; padding: 2px; margin-bottom: 12px; box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);">
-                  <div id="progress-bar-fill" style="background: linear-gradient(90deg, #2563eb, #1d4ed8); width: 5%; height: 100%; border-radius: 4px; transition: width 0.4s ease;"></div>
-              </div>
-              
-              <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; color: #475569;">
-                  <span id="progress-percent">5%</span>
-                  <span id="progress-text">సర్వర్‌‌తో కనెక్ట్ అవుతోంది...</span>
-              </div>
-          </div>
-      `,
-    allowOutsideClick: false,
-    allowEscapeKey: false,
-    showConfirmButton: false,
-    didOpen: () => {
-      const fill = document.getElementById("progress-bar-fill");
-      const percent = document.getElementById("progress-percent");
-      const text = document.getElementById("progress-text");
+  const original = btnElement.innerHTML;
+  btnElement.disabled = true;
+  btnElement.innerHTML =
+    '<i class="fa-solid fa-spinner fa-spin"></i> సిద్ధమవుతోంది...';
 
-      let currentPercent = 5;
+  const params =
+    `book_page_url=${encodeURIComponent(url)}` +
+    `&title=${encodeURIComponent(title)}` +
+    `&source=${encodeURIComponent(source)}`;
 
-      window.downloadProgressInterval = setInterval(() => {
-        if (currentPercent < 90) {
-          const increment =
-            currentPercent < 40
-              ? Math.floor(Math.random() * 8) + 5
-              : Math.floor(Math.random() * 3) + 1;
-          currentPercent = Math.min(currentPercent + increment, 90);
-
-          if (fill) fill.style.width = currentPercent + "%";
-          if (percent) percent.innerText = currentPercent + "%";
-
-          if (currentPercent > 60 && text) {
-            text.innerText = "ఫైల్ స్ట్రీమ్ ప్రాసెస్ చేయబడుతోంది...";
-          } else if (currentPercent > 30 && text) {
-            text.innerText = "లైబ్రరీ నుండి డేటా సేకరించబడుతోంది...";
-          }
-        }
-      }, 400);
-    },
-    willClose: () => {
-      clearInterval(window.downloadProgressInterval);
-    },
-  });
-
+  // Quick preflight. The download itself is a browser navigation, so a failure
+  // there would just save an error page; checking first lets us show a proper
+  // message instead. (For Google Drive and TTD this also fetches the file.)
+  let prepared = "";
   try {
-    const response = await fetch(
-      `/download-book?book_page_url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}&source=${encodeURIComponent(source)}`,
-      {
-        signal: window.currentFetchController
-          ? window.currentFetchController.signal
-          : undefined,
-      },
-    );
-    const data = await response.json();
-
-    clearInterval(window.downloadProgressInterval);
-    const fill = document.getElementById("progress-bar-fill");
-    const percent = document.getElementById("progress-percent");
-    const text = document.getElementById("progress-text");
-    if (fill) fill.style.width = "100%";
-    if (percent) percent.innerText = "100%";
-    if (text) text.innerText = "పూర్తయింది!";
-
-    await new Promise((r) => setTimeout(r, 400));
-
-    if (data.status === "success") {
-      btnElement.innerHTML = '<i class="fa-solid fa-check"></i> సేవ్ అయింది';
-      btnElement.style.backgroundColor = "#1e3a8a";
-
-      // Start the browser download immediately - no second confirmation. The file
-      // is streamed from our own server (the library sites cannot be fetched
-      // directly by the browser), so the browser's download manager takes over and
-      // shows the progress from here.
-      const a = document.createElement("a");
-      a.href = data.download_url || data.file_url;
-      a.download = data.filename || "";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-
+    const check = await fetch(`/download-check?${params}`).then((r) => r.json());
+    if (!check.ok) {
+      btnElement.disabled = false;
+      btnElement.innerHTML = original;
       Swal.fire({
-        title: "డౌన్‌లోడ్ ప్రారంభమైంది!",
-        text: `"${title}" ఫైల్ మీ కంప్యూటర్‌లో సేవ్ అవుతోంది.`,
-        icon: "success",
-        timer: 2000,
-        showConfirmButton: false,
-      });
-    } else if (data.status === "gdrive_restricted") {
-      btnElement.innerHTML =
-        '<i class="fa-brands fa-google-drive"></i> డ్రైవ్‌లో తెరవండి';
-      btnElement.style.backgroundColor = "#d97706";
-
-      Swal.fire({
-        title: "గూగుల్ లాగిన్ అవసరం",
-        text: "ఈ పుస్తకానికి Google ఖాతా అనుమతి అవసరం. దయచేసి దీన్ని నేరుగా డ్రైవ్‌లో తెరవండి.",
-        icon: "info",
-        showCancelButton: true,
-        confirmButtonColor: "#2563eb",
-        cancelButtonColor: "#64748b",
-        confirmButtonText:
-          '<i class="fa-solid fa-arrow-up-right-from-square"></i> డ్రైవ్‌లో తెరవండి',
-        cancelButtonText: "మూసివేయండి",
-      }).then((res) => {
-        if (res.isConfirmed) {
-          window.open(data.url, "_blank");
-        }
-      });
-    } else {
-      Swal.fire({
-        title: "విఫలమైంది",
-        text: data.message,
+        title: "డౌన్‌లోడ్ కుదరలేదు",
+        text: check.message || "ఈ పుస్తకాన్ని డౌన్‌లోడ్ చేయలేకపోయాం.",
         icon: "error",
         confirmButtonColor: "#dc2626",
       });
+      return;
     }
-  } catch (error) {
-    if (error.name === "AbortError") return;
-
-    clearInterval(window.downloadProgressInterval);
-    Swal.fire({
-      title: "లోపం",
-      text: "సర్వర్‌తో కనెక్షన్ విఫలమైంది.",
-      icon: "error",
-      confirmButtonColor: "#dc2626",
-    });
+    prepared = check.prepared || "";
+  } catch (e) {
+    // If the preflight itself fails, just try the download anyway.
   }
-}
 
+  // Hand the file straight to the browser: the server streams it, so the browser's
+  // own download manager starts immediately and shows the real progress.
+  const a = document.createElement("a");
+  a.href = `/download-book?${params}&prepared=${encodeURIComponent(prepared)}`;
+  a.download = "";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  setTimeout(() => {
+    btnElement.disabled = false;
+    btnElement.innerHTML = '<i class="fa-solid fa-check"></i> సేవ్ అయింది';
+    btnElement.style.backgroundColor = "#1e3a8a";
+  }, 2000);
+}
 let currentFetchController = null;
 let downloadProgressInterval = null;
 let searchRequestSequence = 0;
