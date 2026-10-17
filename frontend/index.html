@@ -86,12 +86,6 @@
           <label class="checkbox-label" title="TTD Ebooks"
             ><input type="checkbox" id="chk-ttd" /> TTD</label
           >
-          <label
-            class="checkbox-label checkbox-regex"
-            title="Regex శోధన — నమూనా (pattern) రూపంలో వెతకండి"
-            ><input type="checkbox" id="chk-regex" />
-            <i class="fa-solid fa-asterisk"></i> Regex</label
-          >
         </div>
       </section>
 
@@ -101,7 +95,25 @@
           <span id="results-title" class="results-title">
             <i class="fa-solid fa-book-open"></i> శోధన ఫలితాలు
           </span>
-          <span id="results-count-label" class="results-count"></span>
+          <div class="results-meta-right">
+            <div
+              class="results-filter"
+              title="వచ్చిన ఫలితాలను వడపోయండి — పేరు లేదా రచయిత ఆధారంగా"
+            >
+              <i class="fa-solid fa-filter"></i>
+              <input
+                type="text"
+                id="result-filter"
+                placeholder="ఫలితాలను వడపోయండి..."
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <label class="regex-toggle" title="Regex నమూనాగా పరిగణించు">
+                <input type="checkbox" id="chk-regex" /> .*
+              </label>
+            </div>
+            <span id="results-count-label" class="results-count"></span>
+          </div>
         </div>
 
         <div id="results" class="results-area">

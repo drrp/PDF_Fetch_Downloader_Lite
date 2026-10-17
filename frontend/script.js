@@ -5,6 +5,7 @@ const chkIa = document.getElementById("chk-ia");
 const chkManasu = document.getElementById("chk-manasu");
 const chkTtd = document.getElementById("chk-ttd");
 const chkRegex = document.getElementById("chk-regex");
+const resultFilter = document.getElementById("result-filter");
 const resultsContainer = document.getElementById("results");
 
 // Short library labels for the UI. The full names stay in the data and in the API
@@ -66,6 +67,20 @@ window.addEventListener("DOMContentLoaded", async () => {
     performSearch();
   }
 });
+
+// ఫిల్టర్ మారినప్పుడు వెంటనే మళ్లీ చూపించడం — సర్వర్‌కి కొత్త రిక్వెస్ట్ అవసరం లేదు.
+if (resultFilter) {
+  resultFilter.addEventListener("input", () => {
+    currentPage = 1;
+    renderCurrentPageResults();
+  });
+}
+if (chkRegex) {
+  chkRegex.addEventListener("change", () => {
+    currentPage = 1;
+    renderCurrentPageResults();
+  });
+}
 // ---------------------------------------------------------
 
 let allSearchResults = []; // మొత్తం ఫలితాలు స్టోర్ చేసుకోవడానికి
@@ -102,10 +117,11 @@ async function performSearch(page = 1) {
     searchBtn.disabled = true;
 
     try {
-      const useRegex = chkRegex ? chkRegex.checked : false;
+      // A new search starts with a clean filter.
+      if (resultFilter) resultFilter.value = "";
       // No limit: the server returns everything it finds and we paginate locally.
       const response = await fetch(
-        `/search?query=${encodeURIComponent(query)}&use_svk=${useSvk}&use_ia=${useIa}&use_manasu=${useManasu}&use_ttd=${useTtd}&regex=${useRegex}`
+        `/search?query=${encodeURIComponent(query)}&use_svk=${useSvk}&use_ia=${useIa}&use_manasu=${useManasu}&use_ttd=${useTtd}`
       );
       const data = await response.json();
 
@@ -125,11 +141,39 @@ async function performSearch(page = 1) {
   renderCurrentPageResults();
 }
 
+// వచ్చిన ఫలితాలను పేరు / రచయిత ఆధారంగా వడపోసే ఫంక్షన్. Regex ఆప్షన్ ఆన్ ఉంటే
+// నమూనాగా పరిగణిస్తుంది; చెల్లని నమూనా ఇచ్చినా ఏ ఫలితాన్నీ దాచదు.
+function currentResults() {
+  const term = resultFilter ? resultFilter.value.trim() : "";
+  if (!term) return allSearchResults;
+
+  if (chkRegex && chkRegex.checked) {
+    let re;
+    try {
+      re = new RegExp(term, "i");
+    } catch (e) {
+      return allSearchResults; // చెల్లని నమూనా — అన్ని ఫలితాలూ చూపిస్తాం
+    }
+    return allSearchResults.filter(
+      (b) => re.test(b.title || "") || re.test(b.author || ""),
+    );
+  }
+
+  const needle = term.toLowerCase();
+  return allSearchResults.filter(
+    (b) =>
+      (b.title || "").toLowerCase().includes(needle) ||
+      (b.author || "").toLowerCase().includes(needle),
+  );
+}
+
 function renderCurrentPageResults() {
   resultsContainer.innerHTML = "";
 
-  const totalBooks = allSearchResults.length;
+  const books = currentResults();
+  const totalBooks = books.length;
   const totalPages = Math.ceil(totalBooks / itemsPerPage) || 1;
+  if (currentPage > totalPages) currentPage = totalPages;
 
   resultsCountLabel.innerText = `మొత్తం: ${totalBooks} పుస్తకాలు (పేజీ ${currentPage} / ${totalPages})`;
 
@@ -141,7 +185,7 @@ function renderCurrentPageResults() {
 
   const startIdx = (currentPage - 1) * itemsPerPage;
   const endIdx = startIdx + itemsPerPage;
-  const pageItems = allSearchResults.slice(startIdx, endIdx);
+  const pageItems = books.slice(startIdx, endIdx);
 
  pageItems.forEach((book) => {
       const card = document.createElement("div");

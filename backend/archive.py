@@ -6,7 +6,11 @@ from pypdf import PdfWriter
 # Internet Archive results are restricted to Telugu texts, and a few prolific
 # government / legal uploaders are excluded because their content is unrelated to
 # the literature this app is for.
-IA_LANGUAGE = "Telugu"
+#
+# The language filter is deliberately broad (items are tagged in several ways), and
+# the filters are applied in decreasing order of strictness so a search never comes
+# back empty just because an item lacked a language tag.
+IA_LANGUAGE_CLAUSE = "(language:Telugu OR language:telugu OR language:tel OR language:te)"
 IA_EXCLUDED_CREATORS = (
     "High Court for State of Telangana",
     "Government of Andhra Pradesh",
@@ -23,18 +27,31 @@ class InternetArchiveScraper:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         }
 
-    def _build_query(self, query: str) -> str:
-        """Restrict the search to Telugu texts and drop the excluded uploaders.
+    def _query_variants(self, query: str):
+        """Queries to try, strictest first (Internet Archive uses Lucene syntax).
 
-        Internet Archive's advanced search takes a Lucene query, so the filters are
-        appended as additional clauses.
+        Per the Archive's search documentation, exclusions use `AND NOT`; the bare
+        `-` form is not reliable. The caller falls back to the next variant when a
+        query matches nothing.
         """
-        parts = [f"({query})", "mediatype:texts", f"language:{IA_LANGUAGE}"]
-        for creator in IA_EXCLUDED_CREATORS:
-            parts.append(f'-creator:"{creator}"')
-        return " AND ".join(parts)
+        base = f"({query})"
+        exclude = "".join(f' AND NOT creator:"{c}"' for c in IA_EXCLUDED_CREATORS)
+        return [
+            f"{base} AND mediatype:texts AND {IA_LANGUAGE_CLAUSE}{exclude}",
+            f"{base} AND mediatype:texts{exclude}",
+            f"{base}",
+        ]
 
     def search(self, query: str):
+        # Try the strictest filter first and fall back if it finds nothing, so a
+        # strict query can never turn a good search into an empty one.
+        for q in self._query_variants(query):
+            books = self._search_once(q)
+            if books:
+                return books
+        return []
+
+    def _search_once(self, q: str):
         all_books = []
         page = 1
         rows = 100  # Fetches up to 100 results at once
@@ -44,7 +61,7 @@ class InternetArchiveScraper:
         
         while True:
             params = {
-                "q": self._build_query(query),
+                "q": q,
                 # 'fl[]' లో description, year/date లను కూడా యాడ్ చేసాము
                 "fl[]": ["identifier", "title", "creator", "description", "year", "date"],
                 "rows": rows, 

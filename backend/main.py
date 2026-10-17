@@ -49,39 +49,13 @@ def read_root():
     return {"error": "index.html not found"}
 
 
-def _regex_keyword(pattern_text: str) -> str:
-    """Best-effort plain keyword to send upstream when the user typed a regex.
-
-    The four library sites only understand plain text, so we take the longest run
-    of literal characters out of the pattern, search with that, and then filter the
-    aggregated results with the full pattern.
-    """
-    runs = [r.strip() for r in re.findall(r"[^\^$.|?*+()\[\]{}]+", pattern_text)]
-    runs = [r for r in runs if r]
-    return max(runs, key=len) if runs else pattern_text
-
-
 @app.get("/search")
 def search(
     query: str = Query(...),
     use_svk: bool = Query(True), use_ia: bool = Query(True),
     use_manasu: bool = Query(True), use_ttd: bool = Query(True),
     page: int = Query(1), limit: int = Query(0),
-    regex: bool = Query(False),
 ):
-    # Optional regex mode. The libraries cannot take a regex themselves, so they are
-    # searched with a plain keyword derived from the pattern, and the aggregated
-    # results are then filtered by the pattern itself.
-    pattern = None
-    upstream_query = query
-    if regex:
-        try:
-            pattern = re.compile(query, re.IGNORECASE)
-            upstream_query = _regex_keyword(query)
-        except re.error as e:
-            print("Invalid regex, falling back to a plain search:", e)
-            pattern = None
-
     # The four libraries are independent, so query them at the same time: the
     # request now takes about as long as the slowest library, not the sum of all.
     sources = []
@@ -93,18 +67,12 @@ def search(
     results = []
     if sources:
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(sources)) as ex:
-            futures = [(name, ex.submit(s.search, upstream_query)) for name, s in sources]
+            futures = [(name, ex.submit(s.search, query)) for name, s in sources]
             for name, fut in futures:          # collect in a fixed order
                 try:
                     results.extend(fut.result())
                 except Exception as e:
                     print(f"{name} search error: {e}")
-
-    if pattern is not None:
-        def keep(book):
-            return bool(pattern.search(book.get("title") or "") or
-                        pattern.search(book.get("author") or ""))
-        results = [b for b in results if keep(b)]
 
     total_items = len(results)
     # limit=0 (the default) returns everything; the frontend paginates locally.
