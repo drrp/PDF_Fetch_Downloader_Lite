@@ -8,62 +8,8 @@ const resultsContainer = document.getElementById("results");
 const statTotal = document.getElementById("stat-total");
 const resultsCountLabel = document.getElementById("results-count-label");
 
-// ప్రస్తుత యూజర్ లాగిన్ వివరాలను సర్వర్ నుండి తెచ్చుకొని స్క్రీన్‌పై చూపించే పర్‌ఫెక్ట్ ఫంక్షన్
-async function checkLoginStatus() {
-  try {
-    const response = await fetch('/api/current-user');
-    const data = await response.json();
-
-    const authSection = document.getElementById("auth-section");
-    const loginBtn = document.getElementById("google-login-btn");
-    
-    if (data.logged_in) {
-      if (loginBtn) {
-        loginBtn.style.display = "none";
-      }
-
-      if (authSection && !document.getElementById("user-profile-card-dynamic")) {
-        const profileDiv = document.createElement("div");
-        profileDiv.id = "user-profile-card-dynamic";
-        profileDiv.style.cssText = "display: flex; align-items: center; gap: 10px; background: #ffffff; padding: 6px 14px; border-radius: 10px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.05);";
-        
-        // ఒకవేళ అడ్మిన్ అయితే అడ్మిన్ బటన్ కనిపిస్తుంది, లేదంటే కేవలం ప్రొఫైల్ & నా ప్రొఫైల్ కనిపిస్తాయి
-        let adminButtonHtml = "";
-        if (data.is_admin) {
-          adminButtonHtml = `
-            <a href="/admin" style="background: #0f172a; color: white; padding: 6px 12px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-flex; align-items: center; gap: 5px; font-size: 13px;">
-                <i class="fa-solid fa-gauge"></i> అడ్మిన్ ప్యానెల్
-            </a>
-          `;
-        }
-
-        profileDiv.innerHTML = `
-          <img src="${data.picture || 'https://via.placeholder.com/36'}" alt="Profile" style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover; border: 2px solid #2563eb;">
-          <div style="display: flex; flex-direction: column; text-align: left;">
-              <span style="font-size: 14px; font-weight: 600; color: #0f172a; line-height: 1.2;">${data.name}</span>
-              <a href="/logout" style="font-size: 11px; color: #dc2626; text-decoration: none; font-weight: 500; margin-top: 2px;">లాగౌట్ (Logout)</a>
-          </div>
-          
-          <a href="/profile" style="background: #3b82f6; color: white; padding: 6px 12px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-flex; align-items: center; gap: 5px; font-size: 13px; margin-left: 5px;">
-              <i class="fa-solid fa-user"></i> నా ప్రొఫైల్
-          </a>
-
-          ${adminButtonHtml}
-        `;
-        
-        authSection.appendChild(profileDiv);
-      }
-    }
-  } catch (e) {
-    console.error("Login status check error:", e);
-  }
-}
-
 // ---------------------------------------------------------
-// పేజీ లోడ్ అవ్వగానే పై ఫంక్షన్‌ను రన్ చేసే కోడ్ (ఇదే మిస్ అయింది!)
 window.addEventListener("DOMContentLoaded", async () => {
-  checkLoginStatus();
-
   // sessionStorage నుండి పెండింగ్ డౌన్‌లోడ్ లేదా సెర్చ్‌ని చెక్ చేయడం (URL క్లీన్‌గా ఉంటుంది)
   const pendingDlUrl = sessionStorage.getItem('pending_dl_url');
   const pendingDlTitle = sessionStorage.getItem('pending_dl_title');

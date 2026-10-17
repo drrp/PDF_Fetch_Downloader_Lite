@@ -1,44 +1,21 @@
-# Render Blueprint for the Telugu Digital Library Hub (PDF_Fetch_Downloader_v2)
-# Deploys the FastAPI backend, which also serves the frontend, as one web service.
+# Render Blueprint for PDF Fetch Downloader (Search & Download, no login)
+# A single FastAPI web service that also serves the frontend.
 # Docs: https://render.com/docs/blueprint-spec
 services:
   - type: web
-    name: pdf-fetch-downloader
+    name: pdf-fetch-downloader-lite
     runtime: python
-    plan: free             # free tier: no card needed, but the service sleeps after ~15 min idle and has no persistent disk
+    plan: free             # free tier: no card needed, but the service sleeps after ~15 min idle
     region: singapore      # closest Render region to India
     buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    # --proxy-headers / --forwarded-allow-ips make uvicorn trust Render's HTTPS
-    # headers, so Google OAuth builds an https:// redirect URL (required for a
-    # custom domain such as library.auchithyam.com).
-    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /
     autoDeploy: true
-    # Custom domain. Add the CNAME at your DNS provider, then Render issues the
-    # certificate automatically. Delete this block if you deploy without one.
-    domains:
-      - library.auchithyam.com
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.0
-      # --- Secrets: set these in the Render dashboard (sync: false keeps them out of git) ---
-      - key: DATABASE_URL
-        sync: false
-      - key: GOOGLE_CLIENT_ID
-        sync: false
-      - key: GOOGLE_CLIENT_SECRET
-        sync: false
-      # --- Render generates a strong session key for you ---
-      - key: SESSION_SECRET_KEY
-        generateValue: true
-      # --- Plain config ---
-      - key: ADMIN_EMAIL
-        value: rpsarma9247@gmail.com
-      - key: COOKIE_HTTPS_ONLY
-        value: "true"
-    # Persistent disk so downloaded PDFs survive restarts. This needs a paid
-    # instance AND a payment method on file, so it is commented out for the free
-    # tier. To enable it: set plan back to 'starter' above and uncomment this block.
+    # Persistent disk so downloaded PDFs survive restarts. Needs a paid instance
+    # and a payment method on file, so it is commented out for the free tier.
     # disk:
     #   name: downloads
     #   mountPath: /opt/render/project/src/downloads
