@@ -25,11 +25,25 @@ pick the repo. `render.yaml` creates the service with everything it needs.
 `PYTHON_VERSION` = `3.12.0`. There are no secrets to set: no database URL, no
 Google keys, no API keys.
 
-## 2. Custom domain (optional)
+## 2. Custom domain: library.auchithyam.com
 
-1. Render service -> **Settings -> Custom Domains -> Add Custom Domain**.
-2. Add the **CNAME** Render shows at your DNS provider. On Cloudflare, keep it
-   **DNS only** until the certificate issues.
+This domain is currently attached to the older `PDF_Fetch_Downloader` service, and
+Render allows a custom domain on **only one service at a time**. To move it here:
+
+1. Open the **old** service -> **Settings -> Custom Domains** -> next to
+   `library.auchithyam.com`, click **Remove**. (The old app keeps running on its
+   `pdf-fetch-downloader.onrender.com` address.)
+2. Open the **Lite** service -> **Settings -> Custom Domains -> Add Custom Domain**
+   and enter `library.auchithyam.com`. Alternatively redeploy the Blueprint, which
+   already declares it in `render.yaml`.
+3. Render shows the DNS record for *this* service - a **CNAME** pointing at
+   `pdf-fetch-downloader-lite.onrender.com`. It differs from the old target, so
+   update that record at your DNS provider. On Cloudflare keep it **DNS only**
+   (grey cloud) until the certificate is issued.
+4. Wait for Render to show **Certificate issued**, then open
+   https://library.auchithyam.com/.
+
+There are no Google OAuth redirect URIs to update, because this app has no login.
 
 ## 3. Verify
 
