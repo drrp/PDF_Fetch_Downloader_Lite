@@ -650,16 +650,6 @@ main.wrap {
   border-top: 1px solid var(--line);
 }
 
-.footer-main {
-  font-size: 14px;
-}
-
-.footer-licence {
-  margin-top: 6px;
-  font-size: 13px;
-  color: #948b80;
-}
-
 .site-footer a {
   font-family: "Noto Sans Telugu", sans-serif;
   font-weight: 700;
