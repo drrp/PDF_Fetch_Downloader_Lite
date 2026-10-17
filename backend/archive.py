@@ -3,6 +3,16 @@ import json
 from io import BytesIO
 from pypdf import PdfWriter
 
+# Internet Archive results are restricted to Telugu texts, and a few prolific
+# government / legal uploaders are excluded because their content is unrelated to
+# the literature this app is for.
+IA_LANGUAGE = "Telugu"
+IA_EXCLUDED_CREATORS = (
+    "High Court for State of Telangana",
+    "Government of Andhra Pradesh",
+)
+
+
 class InternetArchiveScraper:
     def __init__(self):
         # Official Internet Archive APIs
@@ -12,6 +22,17 @@ class InternetArchiveScraper:
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         }
+
+    def _build_query(self, query: str) -> str:
+        """Restrict the search to Telugu texts and drop the excluded uploaders.
+
+        Internet Archive's advanced search takes a Lucene query, so the filters are
+        appended as additional clauses.
+        """
+        parts = [f"({query})", "mediatype:texts", f"language:{IA_LANGUAGE}"]
+        for creator in IA_EXCLUDED_CREATORS:
+            parts.append(f'-creator:"{creator}"')
+        return " AND ".join(parts)
 
     def search(self, query: str):
         all_books = []
@@ -23,7 +44,7 @@ class InternetArchiveScraper:
         
         while True:
             params = {
-                "q": query,
+                "q": self._build_query(query),
                 # 'fl[]' లో description, year/date లను కూడా యాడ్ చేసాము
                 "fl[]": ["identifier", "title", "creator", "description", "year", "date"],
                 "rows": rows, 

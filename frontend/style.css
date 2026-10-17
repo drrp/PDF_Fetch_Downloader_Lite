@@ -300,6 +300,21 @@ main.wrap {
   border-color: var(--maroon);
 }
 
+.checkbox-regex i {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.checkbox-regex:has(input:checked) {
+  color: #1d4ed8;
+  background: #eef3ff;
+  border-color: #1d4ed8;
+}
+
+.checkbox-regex:has(input:checked) i {
+  color: #1d4ed8;
+}
+
 /* ============================ RESULTS ============================ */
 
 .results-section {
@@ -600,12 +615,22 @@ main.wrap {
 
 .site-footer {
   margin-top: 48px;
-  padding: 22px 0;
+  padding: 24px 0;
   text-align: center;
   font-size: 14px;
   color: var(--muted);
   background: #fff;
   border-top: 1px solid var(--line);
+}
+
+.footer-main {
+  font-size: 14px;
+}
+
+.footer-licence {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #948b80;
 }
 
 .site-footer a {
@@ -617,6 +642,37 @@ main.wrap {
 
 .site-footer a:hover {
   text-decoration: underline;
+}
+
+/* ============ SweetAlert2: make the alerts use the app fonts ============ */
+
+.swal2-popup,
+.swal2-title,
+.swal2-html-container,
+.swal2-confirm,
+.swal2-cancel,
+.swal2-deny,
+.swal2-input,
+.swal2-validation-message {
+  font-family: "Inter", "Noto Sans Telugu", system-ui, sans-serif !important;
+}
+
+.swal2-title {
+  font-weight: 700 !important;
+  color: var(--maroon-dark) !important;
+}
+
+.swal2-html-container {
+  font-size: 15px !important;
+  line-height: 1.85 !important;
+  color: #4a423a !important;
+}
+
+.swal2-confirm,
+.swal2-cancel {
+  border-radius: 10px !important;
+  font-weight: 600 !important;
+  padding: 10px 20px !important;
 }
 
 /* ============================ RESPONSIVE ============================ */

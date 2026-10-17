@@ -74,17 +74,23 @@
 
         <div class="sources-filters">
           <span class="filters-label"><i class="fa-solid fa-filter"></i> మూలాలు</span>
-          <label class="checkbox-label"
-            ><input type="checkbox" id="chk-ia" checked /> Internet Archive</label
+          <label class="checkbox-label" title="Internet Archive"
+            ><input type="checkbox" id="chk-ia" checked /> IA</label
           >
-          <label class="checkbox-label"
-            ><input type="checkbox" id="chk-svk" checked /> SVK Library</label
+          <label class="checkbox-label" title="SVK Library"
+            ><input type="checkbox" id="chk-svk" checked /> SVK</label
           >
-          <label class="checkbox-label"
-            ><input type="checkbox" id="chk-manasu" checked /> Manasu Foundation</label
+          <label class="checkbox-label" title="Manasu Foundation"
+            ><input type="checkbox" id="chk-manasu" checked /> MF</label
           >
-          <label class="checkbox-label"
-            ><input type="checkbox" id="chk-ttd" /> TTD Ebooks</label
+          <label class="checkbox-label" title="TTD Ebooks"
+            ><input type="checkbox" id="chk-ttd" /> TTD</label
+          >
+          <label
+            class="checkbox-label checkbox-regex"
+            title="Regex శోధన — నమూనా (pattern) రూపంలో వెతకండి"
+            ><input type="checkbox" id="chk-regex" />
+            <i class="fa-solid fa-asterisk"></i> Regex</label
           >
         </div>
       </section>
@@ -104,9 +110,9 @@
             <div>
               <div class="note-title">శోధన సూచనలు (Search Tips)</div>
               <ul>
-                <li>Internet Archive నుండి ఏ భాషలోనైనా వెతకవచ్చు</li>
-                <li>SVK Library &amp; TTD Ebooks ఇంగ్లీష్ లిపిలో మాత్రమే వెతకగలరు</li>
-                <li>Manasu Foundation తెలుగు లిపిలో మాత్రమే వెతకగలరు</li>
+                <li>IA నుండి ఏ భాషలోనైనా వెతకవచ్చు</li>
+                <li>SVK &amp; TTD ఇంగ్లీష్ లిపిలో మాత్రమే వెతకగలరు</li>
+                <li>MF తెలుగు లిపిలో మాత్రమే వెతకగలరు</li>
               </ul>
             </div>
           </div>
@@ -117,8 +123,20 @@
     <!-- ============ FOOTER ============ -->
     <footer class="site-footer">
       <div class="wrap">
-        Developed by
-        <a href="https://auchithyam.com" target="_blank" rel="noopener">ఔచిత్యమ్</a>
+        <div class="footer-main">
+          Developed by
+          <a href="https://auchithyam.com" target="_blank" rel="noopener">ఔచిత్యమ్</a>
+          · © 2026
+        </div>
+        <div class="footer-licence">
+          Code licensed under the
+          <a
+            href="https://github.com/drrp/PDF_Fetch_Downloader_Lite/blob/main/LICENSE"
+            target="_blank"
+            rel="noopener"
+            >MIT License</a
+          >
+        </div>
       </div>
     </footer>
 

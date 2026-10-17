@@ -4,7 +4,18 @@ const chkSvk = document.getElementById("chk-svk");
 const chkIa = document.getElementById("chk-ia");
 const chkManasu = document.getElementById("chk-manasu");
 const chkTtd = document.getElementById("chk-ttd");
+const chkRegex = document.getElementById("chk-regex");
 const resultsContainer = document.getElementById("results");
+
+// Short library labels for the UI. The full names stay in the data and in the API
+// calls; only what is displayed is abbreviated.
+const SOURCE_ABBR = {
+  "Internet Archive": "IA",
+  "SVK": "SVK",
+  "Manasu Foundation": "MF",
+  "TTD Ebooks": "TTD",
+};
+const abbr = (source) => SOURCE_ABBR[source] || source;
 const statTotal = document.getElementById("stat-total");
 const resultsCountLabel = document.getElementById("results-count-label");
 
@@ -36,7 +47,7 @@ window.addEventListener("DOMContentLoaded", async () => {
         <div class="book-info">
             <div class="no-cover"><i class="fa-solid fa-book"></i></div>
             <div class="book-details-content">
-                <span class="badge ${badgeClass}">${pendingDlSource}</span>
+                <span class="badge ${badgeClass}" title="${pendingDlSource}">${abbr(pendingDlSource)}</span>
                 <div class="book-title">${pendingDlTitle}</div>
             </div>
         </div>
@@ -91,9 +102,10 @@ async function performSearch(page = 1) {
     searchBtn.disabled = true;
 
     try {
-      // లిమిట్ లేకుండా అన్ని రిజల్ట్స్ ఒకేసారి తెచ్చుకోవడం కోసం 
+      const useRegex = chkRegex ? chkRegex.checked : false;
+      // No limit: the server returns everything it finds and we paginate locally.
       const response = await fetch(
-        `/search?query=${encodeURIComponent(query)}&use_svk=${useSvk}&use_ia=${useIa}&use_manasu=${useManasu}&use_ttd=${useTtd}&limit=500`
+        `/search?query=${encodeURIComponent(query)}&use_svk=${useSvk}&use_ia=${useIa}&use_manasu=${useManasu}&use_ttd=${useTtd}&regex=${useRegex}`
       );
       const data = await response.json();
 
@@ -152,7 +164,7 @@ function renderCurrentPageResults() {
               <div class="book-info">
                   ${coverHtml}
                   <div class="book-details-content">
-                      <span class="badge ${badgeClass}">${book.source}</span>
+                      <span class="badge ${badgeClass}" title="${book.source}">${abbr(book.source)}</span>
                       <div class="book-title">${book.title} ${yearHtml}</div>
                       ${authorHtml}
                   </div>
