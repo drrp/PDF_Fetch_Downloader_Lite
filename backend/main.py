@@ -8,8 +8,14 @@ import uuid
 from urllib.parse import quote
 
 from fastapi import FastAPI, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+
+try:
+    import rcssmin
+    import rjsmin
+except ImportError:  # minification is optional; fall back to serving files as-is
+    rcssmin = rjsmin = None
 
 from backend.svk import SVKScraper
 from backend.archive import InternetArchiveScraper
@@ -23,11 +29,54 @@ DOWNLOAD_DIR = os.path.join(BASE_DIR, "downloads")
 
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-app = FastAPI(title="PDF Fetch Downloader (Search & Download)")
+class MinifiedStaticFiles(StaticFiles):
+    """Serve JS and CSS minified.
+
+    The browser must download these files to run the app, so they can never be fully
+    hidden - but minifying keeps the comments and layout out of view, so the page
+    source no longer reads like documentation of how the app is put together.
+    """
+
+    _cache = {}
+
+    async def get_response(self, path, scope):
+        if rjsmin is not None and path.endswith((".js", ".css")):
+            full = os.path.join(str(self.directory), path)
+            try:
+                stamp = os.path.getmtime(full)
+            except OSError:
+                return await super().get_response(path, scope)
+
+            key = (path, stamp)
+            cached = self._cache.get(key)
+            if cached is None:
+                with open(full, "r", encoding="utf-8") as f:
+                    source = f.read()
+                if path.endswith(".js"):
+                    cached = (rjsmin.jsmin(source), "application/javascript")
+                else:
+                    cached = (rcssmin.cssmin(source), "text/css")
+                self._cache.clear()
+                self._cache[key] = cached
+
+            body, media_type = cached
+            return Response(body, media_type=media_type,
+                            headers={"Cache-Control": "public, max-age=3600"})
+
+        return await super().get_response(path, scope)
+
+
+app = FastAPI(
+    title="Telugu Digital Library Hub",
+    # No public API documentation: it would list every endpoint, parameter and
+    # response shape. None of that belongs to the reader.
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 
 if os.path.exists(FRONTEND_DIR):
-    app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
-app.mount("/downloads", StaticFiles(directory=DOWNLOAD_DIR), name="downloads")
+    app.mount("/static", MinifiedStaticFiles(directory=FRONTEND_DIR), name="static")
 
 svk_scraper = SVKScraper()
 ia_scraper = InternetArchiveScraper()

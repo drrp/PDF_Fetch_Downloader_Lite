@@ -8,7 +8,8 @@ services:
     plan: free             # free tier: no card needed, but the service sleeps after ~15 min idle
     region: singapore      # closest Render region to India
     buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    # --no-server-header stops uvicorn advertising itself in every response.
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT --no-server-header
     healthCheckPath: /
     autoDeploy: true
     # NOTE: this domain is currently attached to the older PDF_Fetch_Downloader

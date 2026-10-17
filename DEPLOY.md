@@ -17,7 +17,7 @@ pick the repo. `render.yaml` creates the service with everything it needs.
 | Setting | Value |
 | --- | --- |
 | Build command | `pip install --upgrade pip && pip install -r requirements.txt` |
-| Start command | `uvicorn backend.main:app --host 0.0.0.0 --port $PORT` |
+| Start command | `uvicorn backend.main:app --host 0.0.0.0 --port $PORT --no-server-header` |
 | Health check path | `/` |
 | Instance type | Free |
 
@@ -52,6 +52,14 @@ There are no Google OAuth redirect URIs to update, because this app has no login
 - [ ] Downloading a book saves a PDF to your computer.
 
 ## 4. Notes
+
+- **What the browser can see.** HTML, CSS and JS have to be downloaded for the app
+  to run, so they can never be truly hidden from a determined reader. They are served
+  minified with no comments, and the public API docs (`/docs`, `/redoc`,
+  `/openapi.json`) are switched off, so nothing describes the app's structure or its
+  endpoints. The `--no-server-header` flag above also stops uvicorn advertising
+  itself in every response. The one exposure left is the repository itself: if the
+  code must not be readable, make the GitHub repository private.
 
 - **Free tier:** the service sleeps after ~15 minutes idle, so the first visit
   afterwards takes 30-60 seconds to wake.
