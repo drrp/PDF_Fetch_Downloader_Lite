@@ -1,6 +1,7 @@
 import warnings
 warnings.filterwarnings("ignore", message=".*httpx module is deprecated.*")
 
+import concurrent.futures
 import os
 import re
 import uuid
@@ -55,11 +56,23 @@ def search(
     use_manasu: bool = Query(True), use_ttd: bool = Query(True),
     page: int = Query(1), limit: int = Query(10)
 ):
+    # The four libraries are independent, so query them at the same time: the
+    # request now takes about as long as the slowest library, not the sum of all.
+    sources = []
+    if use_svk: sources.append(("SVK", svk_scraper))
+    if use_ia: sources.append(("Internet Archive", ia_scraper))
+    if use_manasu: sources.append(("Manasu Foundation", manasu_scraper))
+    if use_ttd: sources.append(("TTD Ebooks", ttd_scraper))
+
     results = []
-    if use_svk: results.extend(svk_scraper.search(query))
-    if use_ia: results.extend(ia_scraper.search(query))
-    if use_manasu: results.extend(manasu_scraper.search(query))
-    if use_ttd: results.extend(ttd_scraper.search(query))
+    if sources:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(sources)) as ex:
+            futures = [(name, ex.submit(s.search, query)) for name, s in sources]
+            for name, fut in futures:          # collect in a fixed order
+                try:
+                    results.extend(fut.result())
+                except Exception as e:
+                    print(f"{name} search error: {e}")
 
     total_items = len(results)
     start_idx = (page - 1) * limit
