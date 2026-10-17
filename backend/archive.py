@@ -14,6 +14,14 @@ IA_LANGUAGE_CLAUSE = "(language:Telugu OR language:telugu OR language:tel OR lan
 IA_EXCLUDED_CREATORS = (
     "High Court for State of Telangana",
     "Government of Andhra Pradesh",
+    "Government of Telangana",
+)
+# Substrings that mark an uploader as out of scope, matched case-insensitively.
+# Internet Archive's query parser is unreliable for exclusions, so these are also
+# applied in Python once the results come back.
+IA_EXCLUDED_CREATOR_PATTERNS = (
+    "government of",
+    "high court",
 )
 
 
@@ -50,6 +58,13 @@ class InternetArchiveScraper:
             if books:
                 return books
         return []
+
+    def _is_excluded_creator(self, creator_text) -> bool:
+        """True when the uploader is one of the out-of-scope government/legal ones."""
+        if not creator_text:
+            return False
+        low = str(creator_text).lower()
+        return any(pattern in low for pattern in IA_EXCLUDED_CREATOR_PATTERNS)
 
     def _search_once(self, q: str):
         all_books = []
@@ -90,7 +105,11 @@ class InternetArchiveScraper:
                     
                     if isinstance(creator, list):
                         creator = ", ".join(creator)
-                        
+
+                    # The query clause is best-effort; this filter guarantees it.
+                    if self._is_excluded_creator(creator):
+                        continue
+
                     full_title = f"{title} - {creator}" if creator else title
                     cover_image = f"https://archive.org/services/img/{identifier}"
                     book_page_url = f"https://archive.org/details/{identifier}"

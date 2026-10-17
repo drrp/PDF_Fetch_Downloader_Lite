@@ -342,32 +342,6 @@ main.wrap {
   background: transparent;
 }
 
-.regex-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding-left: 10px;
-  border-left: 1px solid var(--line);
-  font-family: "Inter", monospace;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--muted);
-  cursor: pointer;
-  user-select: none;
-}
-
-.regex-toggle input[type="checkbox"] {
-  accent-color: #1d4ed8;
-  width: 14px;
-  height: 14px;
-  margin: 0;
-  cursor: pointer;
-}
-
-.regex-toggle:has(input:checked) {
-  color: #1d4ed8;
-}
-
 /* ============================ RESULTS ============================ */
 
 .results-section {

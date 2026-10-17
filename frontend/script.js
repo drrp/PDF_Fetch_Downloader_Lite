@@ -4,7 +4,6 @@ const chkSvk = document.getElementById("chk-svk");
 const chkIa = document.getElementById("chk-ia");
 const chkManasu = document.getElementById("chk-manasu");
 const chkTtd = document.getElementById("chk-ttd");
-const chkRegex = document.getElementById("chk-regex");
 const resultFilter = document.getElementById("result-filter");
 const resultsContainer = document.getElementById("results");
 
@@ -75,12 +74,6 @@ if (resultFilter) {
     renderCurrentPageResults();
   });
 }
-if (chkRegex) {
-  chkRegex.addEventListener("change", () => {
-    currentPage = 1;
-    renderCurrentPageResults();
-  });
-}
 // ---------------------------------------------------------
 
 let allSearchResults = []; // మొత్తం ఫలితాలు స్టోర్ చేసుకోవడానికి
@@ -141,23 +134,10 @@ async function performSearch(page = 1) {
   renderCurrentPageResults();
 }
 
-// వచ్చిన ఫలితాలను పేరు / రచయిత ఆధారంగా వడపోసే ఫంక్షన్. Regex ఆప్షన్ ఆన్ ఉంటే
-// నమూనాగా పరిగణిస్తుంది; చెల్లని నమూనా ఇచ్చినా ఏ ఫలితాన్నీ దాచదు.
+// వచ్చిన ఫలితాలను పేరు / రచయిత ఆధారంగా వడపోసే ఫంక్షన్ (ప్లెయిన్ టెక్స్ట్).
 function currentResults() {
   const term = resultFilter ? resultFilter.value.trim() : "";
   if (!term) return allSearchResults;
-
-  if (chkRegex && chkRegex.checked) {
-    let re;
-    try {
-      re = new RegExp(term, "i");
-    } catch (e) {
-      return allSearchResults; // చెల్లని నమూనా — అన్ని ఫలితాలూ చూపిస్తాం
-    }
-    return allSearchResults.filter(
-      (b) => re.test(b.title || "") || re.test(b.author || ""),
-    );
-  }
 
   const needle = term.toLowerCase();
   return allSearchResults.filter(
@@ -328,27 +308,23 @@ async function savePdfLocally(url, title, source, btnElement) {
       btnElement.innerHTML = '<i class="fa-solid fa-check"></i> సేవ్ అయింది';
       btnElement.style.backgroundColor = "#1e3a8a";
 
+      // Start the browser download immediately - no second confirmation. The file
+      // is streamed from our own server (the library sites cannot be fetched
+      // directly by the browser), so the browser's download manager takes over and
+      // shows the progress from here.
+      const a = document.createElement("a");
+      a.href = data.download_url || data.file_url;
+      a.download = data.filename || "";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
       Swal.fire({
-        title: "డౌన్‌లోడ్ పూర్తయింది!",
-        text: `"${title}" ఫైల్‌ను మీ కంప్యూటర్‌లో సేవ్ చేయడానికి కింద నొక్కండి.`,
+        title: "డౌన్‌లోడ్ ప్రారంభమైంది!",
+        text: `"${title}" ఫైల్ మీ కంప్యూటర్‌లో సేవ్ అవుతోంది.`,
         icon: "success",
-        showCancelButton: true,
-        confirmButtonColor: "#059669",
-        cancelButtonColor: "#64748b",
-        confirmButtonText:
-          '<i class="fa-solid fa-download"></i> ఫైల్ సేవ్ చేయండి',
-        cancelButtonText: "మూసివేయండి",
-      }).then((res) => {
-        if (res.isConfirmed) {
-          // Download the file to disk instead of opening it in a tab: large
-          // scanned PDFs render very slowly in the browser.
-          const a = document.createElement("a");
-          a.href = data.download_url || data.file_url;
-          a.download = data.filename || "";
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-        }
+        timer: 2000,
+        showConfirmButton: false,
       });
     } else if (data.status === "gdrive_restricted") {
       btnElement.innerHTML =
