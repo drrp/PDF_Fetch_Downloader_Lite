@@ -5,10 +5,9 @@ import concurrent.futures
 import os
 import re
 import uuid
-from urllib.parse import quote
 
 from fastapi import FastAPI, Query
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from backend.svk import SVKScraper
@@ -94,21 +93,20 @@ def _safe_book_name(title: str, limit: int = 60) -> str:
     return re.sub(r'[\\/*?:"<>|]', "", title).strip()[:limit] or "book"
 
 
-def _content_disposition(filename: str) -> str:
-    """Build a Content-Disposition header that can carry a Telugu file name.
-
-    HTTP headers are latin-1, so a Telugu title cannot go in `filename=` directly;
-    it is sent RFC 5987 style in `filename*`, with an ASCII fallback alongside.
-    """
-    # A fully Telugu title leaves nothing behind, so fall back to a generic name.
-    base = filename[:-4] if filename.lower().endswith(".pdf") else filename
-    ascii_name = base.encode("ascii", "ignore").decode("ascii").strip(" .") or "book"
-    return f"attachment; filename=\"{ascii_name}.pdf\"; filename*=UTF-8''{quote(filename)}"
+def _looks_like_pdf(path: str) -> bool:
+    """Cheap sanity check, so a corrupt or HTML response is never handed to the user."""
+    try:
+        with open(path, "rb") as f:
+            return b"%PDF-" in f.read(1024)
+    except OSError:
+        return False
 
 
 def _fetch_to_disk(source: str, book_page_url: str, title: str, filepath: str):
-    """Fetch a book to disk. Used where the source cannot be streamed."""
-    if source == "Manasu Foundation":
+    """Fetch a book to disk using the scraper for its source."""
+    if source == "Internet Archive":
+        ia_scraper.download(book_page_url, title, filepath)
+    elif source == "Manasu Foundation":
         if hasattr(manasu_scraper, "consult_download"):
             manasu_scraper.consult_download(book_page_url, title, filepath)
         else:
@@ -119,89 +117,72 @@ def _fetch_to_disk(source: str, book_page_url: str, title: str, filepath: str):
         svk_scraper.download(book_page_url, title, filepath)
 
 
+def _new_book_path(title: str) -> str:
+    return f"{_safe_book_name(title, 40)}_{uuid.uuid4().hex[:6]}.pdf"
+
+
+def _error_download(message: str) -> Response:
+    return Response(
+        f"Download failed: {message}",
+        media_type="text/plain",
+        headers={"Content-Disposition": 'attachment; filename="download-error.txt"'},
+    )
+
+
 @app.get("/download-check")
 def download_check(book_page_url: str = Query(...), title: str = Query("book"), source: str = Query("SVK")):
-    """Preflight before the browser starts downloading.
+    """Fetch the book to disk before the browser starts downloading.
 
-    The download itself is a browser navigation, so a failure there would just save
-    an error page. Checking first lets us show a proper message instead. Sources that
-    cannot be streamed (Google Drive, TTD) are fetched to disk here, and the stream
-    step then simply serves that file.
+    The browser download is a plain navigation, so a failure there would just save an
+    error page. Fetching first lets us report problems properly - and the result is
+    checked to be a real PDF before it is offered.
     """
-    try:
-        if source == "Internet Archive":
-            ia_scraper.resolve(book_page_url)
-            return {"ok": True}
-        if source == "SVK":
-            svk_scraper.resolve(book_page_url)
-            return {"ok": True}
+    prepared = _new_book_path(title)
+    path = os.path.join(DOWNLOAD_DIR, prepared)
 
-        # Google Drive and TTD need the file itself, so fetch it now.
-        prepared = f"{_safe_book_name(title, 40)}_{uuid.uuid4().hex[:6]}.pdf"
-        _fetch_to_disk(source, book_page_url, title, os.path.join(DOWNLOAD_DIR, prepared))
-        return {"ok": True, "prepared": prepared}
+    try:
+        _fetch_to_disk(source, book_page_url, title, path)
     except Exception as e:
         return {"ok": False, "message": str(e)}
+
+    if not _looks_like_pdf(path):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        return {
+            "ok": False,
+            "message": "ఈ గ్రంథాలయం నుండి వచ్చిన ఫైల్ సరైన PDF కాదు. దయచేసి మరో పుస్తకం ప్రయత్నించండి.",
+        }
+
+    return {"ok": True, "prepared": prepared}
 
 
 @app.get("/download-book")
 def download_book(
-    book_page_url: str = Query(...), title: str = Query(...),
+    book_page_url: str = Query(""), title: str = Query(...),
     source: str = Query("SVK"), prepared: str = Query(""),
 ):
-    """Stream the book to the browser.
+    """Serve an already-fetched book as a file download.
 
-    The response headers go out immediately, so the browser's own download manager
-    starts at once and shows real progress - no waiting dialog. Where the source
-    offers a direct PDF URL (Internet Archive, SVK) the file is streamed straight
-    through; otherwise the file fetched during the preflight is served.
+    The file is sent from disk with Content-Length, so the browser shows real
+    progress and saves exactly the bytes the scraper fetched.
     """
     filename = f"{_safe_book_name(title)}.pdf"
 
-    if prepared:
-        path = os.path.join(DOWNLOAD_DIR, os.path.basename(prepared))
-        if os.path.exists(path):
-            return FileResponse(path, media_type="application/pdf", filename=filename)
-        return Response(
-            "Download failed: the prepared file is no longer available.",
-            media_type="text/plain",
-            headers={"Content-Disposition": 'attachment; filename="download-error.txt"'},
-        )
-
-    if source in ("Manasu Foundation", "TTD Ebooks"):
-        # Not streamable - fetch it first, then serve the file.
-        path = os.path.join(DOWNLOAD_DIR, f"{_safe_book_name(title, 40)}_{uuid.uuid4().hex[:6]}.pdf")
+    if not prepared:
+        # Reached directly, without the preflight: fetch it now, then serve it.
+        prepared = _new_book_path(title)
         try:
-            _fetch_to_disk(source, book_page_url, title, path)
+            _fetch_to_disk(source, book_page_url, title, os.path.join(DOWNLOAD_DIR, prepared))
         except Exception as e:
-            return Response(
-                f"Download failed: {e}", media_type="text/plain",
-                headers={"Content-Disposition": 'attachment; filename="download-error.txt"'},
-            )
-        return FileResponse(path, media_type="application/pdf", filename=filename)
+            return _error_download(str(e))
 
-    try:
-        if source == "Internet Archive":
-            direct_url, direct_headers = ia_scraper.resolve(book_page_url)
-        else:
-            direct_url, direct_headers = svk_scraper.resolve(book_page_url)
-    except Exception as e:
-        return Response(
-            f"Download failed: {e}", media_type="text/plain",
-            headers={"Content-Disposition": 'attachment; filename="download-error.txt"'},
-        )
+    path = os.path.join(DOWNLOAD_DIR, os.path.basename(prepared))
+    if not os.path.exists(path):
+        return _error_download("the prepared file is no longer available")
 
-    def body():
-        with requests.get(direct_url, headers=direct_headers, stream=True, timeout=(20, 300)) as r:
-            r.raise_for_status()
-            for chunk in r.iter_content(chunk_size=65536):
-                if chunk:
-                    yield chunk
-
-    return StreamingResponse(
-        body(), media_type="application/pdf",
-        headers={"Content-Disposition": _content_disposition(filename)},
-    )
+    return FileResponse(path, media_type="application/pdf", filename=filename)
 
 
 @app.get("/download-file")

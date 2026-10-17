@@ -76,33 +76,6 @@ class SVKScraper(BaseLibraryScraper):
                 break
         return all_books
 
-    def resolve(self, book_page_url: str):
-        """Return (pdf_url, headers) for a book page, without downloading the file.
-
-        Lets the browser stream the PDF straight from the source instead of waiting
-        for the server to fetch it first.
-        """
-        response = requests.get(book_page_url, headers=self.headers, timeout=15)
-        soup = BeautifulSoup(response.text, "html.parser")
-        pdf_href = None
-
-        download_button = soup.select_one("button[onclick*='location.href']")
-        if download_button:
-            match = re.search(r"location\.href=['\"]([^'\"]+)['\"]", download_button.get("onclick", ""))
-            if match:
-                pdf_href = match.group(1)
-
-        if not pdf_href:
-            fallback_pdf = soup.find("a", href=lambda h: h and h != "#" and ".pdf" in h.lower())
-            if fallback_pdf:
-                pdf_href = fallback_pdf.get("href")
-
-        if not pdf_href or pdf_href == "#":
-            raise Exception("Could not extract PDF link from SVK book page.")
-
-        pdf_url = f"{self.base_domain}{pdf_href}" if pdf_href.startswith("/") else pdf_href
-        return pdf_url, dict(self.headers)
-
     def download(self, book_page_url: str, title: str, filepath: str):
         response = requests.get(book_page_url, headers=self.headers, timeout=15)
         soup = BeautifulSoup(response.text, "html.parser")
