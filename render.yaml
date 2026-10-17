@@ -14,7 +14,7 @@ services:
     autoDeploy: true
     # NOTE: this domain is currently attached to the older PDF_Fetch_Downloader
     # service. Render allows a custom domain on only one service, so release it
-    # there first (see DEPLOY.md, step 2) or this will fail to apply.
+    # there first or this will fail to apply.
     domains:
       - library.auchithyam.com
     envVars:
