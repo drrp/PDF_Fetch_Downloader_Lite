@@ -3,6 +3,8 @@ warnings.filterwarnings("ignore", message=".*httpx module is deprecated.*")
 warnings.filterwarnings("ignore", module="authlib")
 
 import concurrent.futures
+import gzip
+import json
 import os
 import re
 import uuid
@@ -192,6 +194,20 @@ LIBRARIES = {
     "c": ("MF", manasu_scraper),
     "d": ("TTD", ttd_scraper),
 }
+
+
+def _json_response(request: Request, payload) -> Response:
+    """JSON, gzipped when the client accepts it.
+
+    The search payload is highly repetitive, so gzip shrinks it roughly sixtyfold -
+    which matters because it is sent on every search.
+    """
+    body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    headers = {}
+    if "gzip" in request.headers.get("accept-encoding", "").lower():
+        body = gzip.compress(body, 6)
+        headers["Content-Encoding"] = "gzip"
+    return Response(content=body, media_type="application/json", headers=headers)
 
 
 def _with_source_label(row):
@@ -439,6 +455,9 @@ def search(
                 for book in fut.result():
                     book["source"] = code
                     book["source_label"] = LIBRARIES[code][0]
+                    # The result cards never show this, and it is a large slice of
+                    # the response, so it is not sent to the browser at all.
+                    book.pop("description", None)
                     results.append(book)
             except Exception as e:
                 print(f"search error [{code}]: {e}")
@@ -456,10 +475,10 @@ def search(
         paginated_results = results
         total_pages = 1
 
-    return {
+    return _json_response(request, {
         "results": paginated_results, "total": total_items,
         "page": page, "total_pages": total_pages
-    }
+    })
 
 
 @app.get("/download-link")
