@@ -146,6 +146,30 @@ class InternetArchiveScraper:
                 
         return all_books
 
+    def resolve(self, book_page_url: str):
+        """Return (pdf_url, headers) for an item, without downloading anything.
+
+        Lets the browser fetch the PDF straight from archive.org, so the file never
+        passes through this server and costs it no bandwidth.
+        """
+        session = requests.Session()
+        session.headers.update(self.headers)
+
+        identifier = book_page_url.split("/details/")[-1].split("/")[0].split("?")[0]
+        meta_res = session.get(f"{self.metadata_api_url}/{identifier}", timeout=20)
+        if meta_res.status_code != 200:
+            raise Exception("Failed to fetch metadata from Internet Archive API.")
+
+        files = (meta_res.json() or {}).get("files", [])
+        pdf_filename = next(
+            (f.get("name") for f in files if f.get("name", "").lower().endswith(".pdf")),
+            None,
+        )
+        if not pdf_filename:
+            raise Exception("PDF format is not available for this book on Internet Archive.")
+
+        return f"{self.download_base_url}/{identifier}/{pdf_filename}", dict(self.headers)
+
     def download(self, book_page_url: str, title: str, filepath: str):
         session = requests.Session()
         session.headers.update(self.headers)

@@ -180,6 +180,48 @@ function changePage(page) {
 }
 
 async function savePdfLocally(url, title, source, btnElement) {
+  const params =
+    `book_page_url=${encodeURIComponent(url)}` +
+    `&title=${encodeURIComponent(title)}` +
+    `&source=${encodeURIComponent(source)}`;
+
+  // First ask whether the library has its own download link. If it does, the book
+  // travels straight from the library to this reader and never touches our server,
+  // which is what keeps the bandwidth down.
+  const previousHtml = btnElement.innerHTML;
+  btnElement.disabled = true;
+  btnElement.innerHTML =
+    '<i class="fa-solid fa-spinner fa-spin"></i> లింక్ వెతుకుతోంది...';
+  try {
+    const link = await fetch(`/download-link?${params}`).then((r) => r.json());
+    if (link && link.ok && link.url) {
+      btnElement.disabled = false;
+      btnElement.innerHTML = '<i class="fa-solid fa-check"></i> సేవ్ అయింది';
+      btnElement.style.backgroundColor = "#1e3a8a";
+
+      Swal.fire({
+        title: "డౌన్‌లోడ్ ప్రారంభమైంది!",
+        text: "మీ బ్రౌజర్ నేరుగా గ్రంథాలయం నుండి ఫైల్‌ను సేవ్ చేస్తోంది.",
+        icon: "success",
+        timer: 2500,
+        showConfirmButton: false,
+      });
+
+      const direct = document.createElement("a");
+      direct.href = link.url;
+      direct.target = "_blank";
+      direct.rel = "noopener";
+      document.body.appendChild(direct);
+      direct.click();
+      direct.remove();
+      return;
+    }
+  } catch (e) {
+    // No direct link available - fall back to the server-side download below.
+  }
+  btnElement.disabled = false;
+  btnElement.innerHTML = previousHtml;
+
   Swal.fire({
     title: "పుస్తకం డౌన్‌లోడ్ అవుతోంది",
     html: `

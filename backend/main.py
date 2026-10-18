@@ -462,6 +462,42 @@ def search(
     }
 
 
+@app.get("/download-link")
+def download_link(
+    request: Request,
+    book_page_url: str = Query(...), title: str = Query(...),
+    source: str = Query("b"),
+):
+    """Resolve the library's own PDF URL so the browser can fetch it directly.
+
+    The book then travels straight from the library to the reader and never passes
+    through this server, which is what keeps the bandwidth down. Sources that cannot
+    be resolved this way (Google Drive, TTD) fall back to /download-book.
+    """
+    if not request.session.get("user"):
+        return JSONResponse({"error": "not_signed_in"}, status_code=401)
+
+    entry = LIBRARIES.get(source)
+    if entry is None:
+        return {"ok": False, "reason": "unknown_source"}
+
+    scraper = entry[1]
+    if not hasattr(scraper, "resolve"):
+        return {"ok": False, "reason": "no_direct_link"}
+
+    try:
+        url, _headers = scraper.resolve(book_page_url)
+    except Exception as e:
+        return {"ok": False, "reason": str(e)}
+
+    log_user_activity(
+        request, "Download",
+        f"డౌన్‌లోడ్ (నేరుగా గ్రంథాలయం నుండి): '{title}' ({entry[0]})", "Success",
+        book_title=title, book_url=book_page_url, source_code=source,
+    )
+    return {"ok": True, "url": url}
+
+
 @app.get("/download-book")
 def download_book(
     request: Request,
