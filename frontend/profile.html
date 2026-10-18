@@ -70,10 +70,18 @@
 
     <script>
         fetch('/user/activity-json')
-            .then(response => response.json())
-            .then(data => {
-                if(data.error) {
+            .then(response => {
+                if (response.status === 401) {
                     window.location.href = "/login/google";
+                    return null;
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (!data) return;
+                if (data.error) {
+                    document.getElementById('history-container').innerHTML =
+                        '<p style="text-align:center; color:#b3202c;">డేటా లోడ్ కాలేదు — దయచేసి మళ్లీ ప్రయత్నించండి.</p>';
                     return;
                 }
 
@@ -110,26 +118,23 @@
 
                     // 🌟 1. ఇది సెర్చ్ హిస్టరీ అయితే మళ్లీ శోధించే బటన్
                     if (isSearch) {
-                        let rawDetails = act.details.replace("వెతికిన పదం: ", "").replace(/'/g, "").trim();
+                        const term = (act.query || "").replace(/'/g, "\\'");
                         actionButton = `
-                            <button onclick="goToHomeSearch('${rawDetails}', 'search')" style="display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; font-size: 12px; background: #fdf4f5; color: #7a1f2b; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-weight: 600; border: 1px solid #e8d5d8; cursor: pointer;">
+                            <button onclick="goToHomeSearch('${term}', 'search')" style="display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; font-size: 12px; background: #fdf4f5; color: #7a1f2b; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-weight: 600; border: 1px solid #e8d5d8; cursor: pointer;">
                                 <i class="fa-solid fa-rotate-right"></i> మళ్లీ శోధించండి
                             </button>
                         `;                        
                     } 
                     // 🌟 2. ఇది డౌన్‌లోడ్ హిస్టరీ అయితే సింగిల్ కార్డ్ చూపించే బటన్
                     else if (act.status === 'Success') {
-                        let titleMatch = act.details.match(/డౌన్‌లోడ్:\s*'([^']+)'/);
-                        let urlMatch = act.details.match(/URL:\s*([^\s|]+)/);
-                        let sourceMatch = act.details.match(/Source:\s*([^\s|]+)/);
-
-                        let bookTitle = titleMatch ? titleMatch[1] : "Book";
-                        let bookUrl = urlMatch ? urlMatch[1] : "";
-                        let bookSource = sourceMatch ? sourceMatch[1] : "Internet Archive";
+                        const bookTitle = act.book_title || "Book";
+                        const bookUrl = act.book_url || "";
+                        const bookSource = act.source_code || "";
+                        const bookLabel = act.source_label || "";
 
                         if (bookUrl) {
                             actionButton = `
-                                <button onclick="goToHomeDownload('${bookUrl}', '${bookTitle.replace(/'/g, "\\'")}', '${bookSource}')" style="display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; font-size: 12px; background: #f0fdf4; color: #047857; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-weight: 600; border: 1px solid #a7f3d0; cursor: pointer;">
+                                <button onclick="goToHomeDownload('${bookUrl}', '${bookTitle.replace(/'/g, "\\'")}', '${bookSource}', '${bookLabel}')" style="display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; font-size: 12px; background: #f0fdf4; color: #047857; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-weight: 600; border: 1px solid #a7f3d0; cursor: pointer;">
                                     <i class="fa-solid fa-download"></i> నేరుగా ఈ పుస్తకాన్ని డౌన్‌లోడ్ చేయి
                                 </button>
                             `;
@@ -163,10 +168,11 @@
                 window.location.href = "/";
             }
 
-            function goToHomeDownload(url, title, source) {
+            function goToHomeDownload(url, title, source, label) {
                 sessionStorage.setItem('pending_dl_url', url);
                 sessionStorage.setItem('pending_dl_title', title);
                 sessionStorage.setItem('pending_dl_source', source);
+                sessionStorage.setItem('pending_dl_label', label);
                 sessionStorage.setItem('keeping_session', 'true');
                 window.location.href = "/";
             }

@@ -62,6 +62,10 @@ async function performSearch(page = 1) {
       const response = await fetch(
         `/search?query=${encodeURIComponent(query)}&sources=${encodeURIComponent(sources)}`
       );
+      if (response.status === 401) {
+        window.location.href = "/login/google";
+        return;
+      }
       const data = await response.json();
 
       allSearchResults = data.results || [];
@@ -235,6 +239,10 @@ async function savePdfLocally(url, title, source, btnElement) {
           : undefined,
       },
     );
+    if (response.status === 401) {
+      window.location.href = "/login/google";
+      return;
+    }
     const data = await response.json();
 
     clearInterval(window.downloadProgressInterval);
@@ -256,7 +264,7 @@ async function savePdfLocally(url, title, source, btnElement) {
       // directly by the browser), so the browser's download manager takes over and
       // shows the progress from here.
       const a = document.createElement("a");
-      a.href = data.download_url || data.file_url;
+      a.href = data.download_url;
       a.download = data.filename || "";
       document.body.appendChild(a);
       a.click();
@@ -391,3 +399,47 @@ async function checkLoginStatus() {
 }
 
 window.addEventListener("DOMContentLoaded", checkLoginStatus);
+
+
+// The profile page hands over a "search again" / "download again" request through
+// sessionStorage before sending the reader back here.
+window.addEventListener("DOMContentLoaded", () => {
+  const pendingSearch = sessionStorage.getItem("pending_search");
+  if (pendingSearch) {
+    sessionStorage.removeItem("pending_search");
+    queryInput.value = pendingSearch;
+    performSearch();
+    return;
+  }
+
+  const dlUrl = sessionStorage.getItem("pending_dl_url");
+  const dlTitle = sessionStorage.getItem("pending_dl_title");
+  const dlSource = sessionStorage.getItem("pending_dl_source");
+  const dlLabel = sessionStorage.getItem("pending_dl_label") || "";
+  if (!dlUrl || !dlTitle) return;
+
+  sessionStorage.removeItem("pending_dl_url");
+  sessionStorage.removeItem("pending_dl_title");
+  sessionStorage.removeItem("pending_dl_source");
+  sessionStorage.removeItem("pending_dl_label");
+
+  queryInput.value = dlTitle;
+  resultsContainer.innerHTML = "";
+  resultsCountLabel.innerText = "మళ్లీ డౌన్‌లోడ్ చేయడానికి సిద్ధంగా ఉన్న పుస్తకం";
+
+  const card = document.createElement("div");
+  card.className = "book-card";
+  card.innerHTML = `
+      <div class="book-info">
+          <div class="no-cover"><i class="fa-solid fa-book"></i></div>
+          <div class="book-details-content">
+              <span class="badge src-${dlSource}">${dlLabel}</span>
+              <div class="book-title">${dlTitle}</div>
+          </div>
+      </div>
+      <button class="action-btn" onclick="savePdfLocally('${dlUrl}', '${dlTitle.replace(/'/g, "\\'")}', '${dlSource}', this)">
+          <i class="fa-solid fa-download"></i> మళ్లీ సేవ్ చేయి
+      </button>
+  `;
+  resultsContainer.appendChild(card);
+});

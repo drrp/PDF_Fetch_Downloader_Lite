@@ -16,7 +16,7 @@ from psycopg2.extras import RealDictCursor
 from authlib.integrations.starlette_client import OAuth
 from dotenv import load_dotenv
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import FileResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -97,6 +97,12 @@ def init_db():
             )
         ''')
 
+        # Structured columns, so the profile and admin pages can act on an activity
+        # (search again, download again) instead of parsing the readable text.
+        # ADD COLUMN IF NOT EXISTS is a no-op on an existing database.
+        for column in ("query", "book_title", "book_url", "source_code"):
+            cursor.execute(f"ALTER TABLE activities ADD COLUMN IF NOT EXISTS {column} TEXT")
+
         conn.commit()
         conn.close()
     except Exception as e:
@@ -133,7 +139,8 @@ class MinifiedStaticFiles(StaticFiles):
                     cached = (rjsmin.jsmin(source), "application/javascript")
                 else:
                     cached = (rcssmin.cssmin(source), "text/css")
-                self._cache.clear()
+                if len(self._cache) > 8:      # only a couple of files in practice
+                    self._cache.clear()
                 self._cache[key] = cached
 
             body, media_type = cached
@@ -187,8 +194,18 @@ LIBRARIES = {
 }
 
 
-def log_user_activity(request: Request, action_type: str, details: str, status: str = "Success"):
-    """Record what a signed-in reader did, for the admin dashboard."""
+def _with_source_label(row):
+    """Attach the reader-facing label for an activity's library code."""
+    entry = dict(row)
+    code = entry.get("source_code")
+    entry["source_label"] = LIBRARIES[code][0] if code in LIBRARIES else ""
+    return entry
+
+
+def log_user_activity(request: Request, action_type: str, details: str, status: str = "Success",
+                      query: str = None, book_title: str = None,
+                      book_url: str = None, source_code: str = None):
+    """Record what a signed-in reader did, for the profile and admin pages."""
     user = request.session.get("user")
     if not user:
         return
@@ -198,10 +215,13 @@ def log_user_activity(request: Request, action_type: str, details: str, status: 
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO activities (email, name, picture, action, details, time, status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO activities
+                (email, name, picture, action, details, time, status,
+                 query, book_title, book_url, source_code)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ''', (user.get("email"), user.get("name"), user.get("picture"),
-              action_type, details, current_time, status))
+              action_type, details, current_time, status,
+              query, book_title, book_url, source_code))
         cursor.execute('UPDATE users SET is_active = TRUE WHERE email = %s', (user.get("email"),))
         conn.commit()
         conn.close()
@@ -310,15 +330,15 @@ def user_profile_page(request: Request):
 def get_user_activity_json(request: Request):
     user = request.session.get("user")
     if not user:
-        return {"error": "Unauthorized"}
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
 
     try:
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute(
-            "SELECT action, details, time, status FROM activities "
-            "WHERE email = %s ORDER BY id DESC", (user.get("email"),))
-        activities = [dict(row) for row in cursor.fetchall()]
+            "SELECT action, details, time, status, query, book_title, book_url, source_code "
+            "FROM activities WHERE email = %s ORDER BY id DESC", (user.get("email"),))
+        activities = [_with_source_label(row) for row in cursor.fetchall()]
         conn.close()
 
         return {
@@ -331,7 +351,7 @@ def get_user_activity_json(request: Request):
             "activities": activities,
         }
     except Exception as e:
-        return {"error": str(e)}
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 @app.get("/admin")
@@ -347,7 +367,7 @@ def admin_dashboard(request: Request):
 def get_admin_users_json(request: Request):
     user = request.session.get("user")
     if not user or user.get("email") != ADMIN_EMAIL:
-        return {"error": "Unauthorized Access"}
+        return JSONResponse({"error": "Unauthorized Access"}, status_code=401)
 
     try:
         conn = get_db_connection()
@@ -355,7 +375,7 @@ def get_admin_users_json(request: Request):
         cursor.execute("SELECT * FROM users")
         users = [dict(row) for row in cursor.fetchall()]
         cursor.execute("SELECT * FROM activities ORDER BY id DESC")
-        activities = [dict(row) for row in cursor.fetchall()]
+        activities = [_with_source_label(row) for row in cursor.fetchall()]
         conn.close()
 
         return {
@@ -369,7 +389,7 @@ def get_admin_users_json(request: Request):
             },
         }
     except Exception as e:
-        return {"error": str(e)}
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 # ---------------------------------------------------------------- app
@@ -400,6 +420,9 @@ def search(
     sources: str = Query(""),
     page: int = Query(1), limit: int = Query(0),
 ):
+    if not request.session.get("user"):
+        return JSONResponse({"error": "not_signed_in"}, status_code=401)
+
     # Which libraries to query, as a comma-separated list of codes. Empty or unknown
     # means all of them.
     codes = [c.strip() for c in sources.split(",") if c.strip() in LIBRARIES]
@@ -421,7 +444,8 @@ def search(
                 print(f"search error [{code}]: {e}")
 
     total_items = len(results)
-    log_user_activity(request, "Search", f"వెతికిన పదం: '{query}' — {total_items} ఫలితాలు")
+    log_user_activity(request, "Search", f"వెతికిన పదం: '{query}' — {total_items} ఫలితాలు",
+                      query=query)
 
     # limit=0 (the default) returns everything; the frontend paginates locally.
     if limit and limit > 0:
@@ -444,6 +468,9 @@ def download_book(
     book_page_url: str = Query(...), title: str = Query(...),
     source: str = Query("b"),
 ):
+    if not request.session.get("user"):
+        return JSONResponse({"error": "not_signed_in"}, status_code=401)
+
     entry = LIBRARIES.get(source)
     if entry is None:
         return {"status": "error", "message": "Unknown source."}
@@ -459,7 +486,8 @@ def download_book(
         else:
             scraper.download(book_page_url, title, filepath)
 
-        log_user_activity(request, "Download", f"డౌన్‌లోడ్: '{title}' ({entry[0]})", "Success")
+        log_user_activity(request, "Download", f"డౌన్‌లోడ్: '{title}' ({entry[0]})", "Success",
+                          book_title=title, book_url=book_page_url, source_code=source)
         return {
             "status": "success",
             "message": "పుస్తకం విజయవంతంగా డౌన్‌లోడ్ చేయబడింది!",
@@ -467,17 +495,21 @@ def download_book(
             "download_url": f"/download-file?filename={quote(filename)}",
         }
     except Exception as e:
-        log_user_activity(request, "Download", f"విఫలం: '{title}' ({entry[0]}) | {e}", "Failed")
+        log_user_activity(request, "Download", f"విఫలం: '{title}' ({entry[0]}) | {e}", "Failed",
+                          book_title=title, book_url=book_page_url, source_code=source)
         return {"status": "error", "message": str(e)}
 
 
 @app.get("/download-file")
-def download_file(filename: str = Query(...)):
+def download_file(request: Request, filename: str = Query(...)):
     """Serve a saved PDF as a file download (attachment) rather than inline.
 
     Browsers render large scanned PDFs very slowly in a tab; sending
     Content-Disposition: attachment saves the file straight to the user's disk.
     """
+    if not request.session.get("user"):
+        return RedirectResponse(url="/login/google", status_code=303)
+
     # os.path.basename prevents path traversal (e.g. '../../etc/passwd')
     safe_name = os.path.basename(filename)
     filepath = os.path.join(DOWNLOAD_DIR, safe_name)
