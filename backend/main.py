@@ -48,6 +48,10 @@ DB_URL = os.getenv("DATABASE_URL")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "rpsarma9247@gmail.com")
 # Send the login cookie over HTTPS only. Set COOKIE_HTTPS_ONLY=false for local HTTP.
 COOKIE_HTTPS_ONLY = os.getenv("COOKIE_HTTPS_ONLY", "true").strip().lower() in ("1", "true", "yes", "on")
+# Local development only: set DEV_NO_LOGIN=true to use the app without Google sign-in.
+# It is off unless you ask for it, so production is unaffected - but never enable it
+# on a public server, because it opens the app to everyone.
+DEV_NO_LOGIN = os.getenv("DEV_NO_LOGIN", "").strip().lower() in ("1", "true", "yes", "on")
 
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
@@ -59,6 +63,8 @@ print(
     "| GOOGLE_CLIENT_ID:", bool(os.getenv("GOOGLE_CLIENT_ID")),
     "| GOOGLE_CLIENT_SECRET:", bool(os.getenv("GOOGLE_CLIENT_SECRET")),
 )
+if DEV_NO_LOGIN:
+    print("WARNING: DEV_NO_LOGIN is set - sign-in is DISABLED. Do not use this on a public server.")
 
 
 def get_db_connection():
@@ -216,6 +222,11 @@ def _with_source_label(row):
     code = entry.get("source_code")
     entry["source_label"] = LIBRARIES[code][0] if code in LIBRARIES else ""
     return entry
+
+
+def _signed_in(request: Request) -> bool:
+    """Whether the caller may use the app. DEV_NO_LOGIN only relaxes this locally."""
+    return bool(request.session.get("user")) or DEV_NO_LOGIN
 
 
 def log_user_activity(request: Request, action_type: str, details: str, status: str = "Success",
@@ -419,7 +430,7 @@ def reset_app():
 
 @app.get("/")
 def read_root(request: Request):
-    if not request.session.get("user"):
+    if not _signed_in(request):
         login_page = os.path.join(FRONTEND_DIR, "login.html")
         if os.path.exists(login_page):
             return FileResponse(login_page)
@@ -436,7 +447,7 @@ def search(
     sources: str = Query(""),
     page: int = Query(1), limit: int = Query(0),
 ):
-    if not request.session.get("user"):
+    if not _signed_in(request):
         return JSONResponse({"error": "not_signed_in"}, status_code=401)
 
     # Which libraries to query, as a comma-separated list of codes. Empty or unknown
@@ -493,7 +504,7 @@ def download_link(
     through this server, which is what keeps the bandwidth down. Sources that cannot
     be resolved this way (Google Drive, TTD) fall back to /download-book.
     """
-    if not request.session.get("user"):
+    if not _signed_in(request):
         return JSONResponse({"error": "not_signed_in"}, status_code=401)
 
     entry = LIBRARIES.get(source)
@@ -523,7 +534,7 @@ def download_book(
     book_page_url: str = Query(...), title: str = Query(...),
     source: str = Query("b"),
 ):
-    if not request.session.get("user"):
+    if not _signed_in(request):
         return JSONResponse({"error": "not_signed_in"}, status_code=401)
 
     entry = LIBRARIES.get(source)
@@ -562,7 +573,7 @@ def download_file(request: Request, filename: str = Query(...)):
     Browsers render large scanned PDFs very slowly in a tab; sending
     Content-Disposition: attachment saves the file straight to the user's disk.
     """
-    if not request.session.get("user"):
+    if not _signed_in(request):
         return RedirectResponse(url="/login/google", status_code=303)
 
     # os.path.basename prevents path traversal (e.g. '../../etc/passwd')
