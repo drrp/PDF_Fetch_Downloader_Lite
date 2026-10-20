@@ -304,6 +304,35 @@ def _signed_in(request: Request) -> bool:
     return bool(request.session.get("user")) or DEV_NO_LOGIN
 
 
+def _index_without_login() -> str:
+    """The app page with the whole sign-in area removed.
+
+    Finds the <div id="auth-section"> block and drops it, counting nested divs so it
+    removes the right closing tag. Anything unexpected leaves the page untouched.
+    """
+    try:
+        with open(FRONTEND_INDEX, encoding="utf-8") as f:
+            html = f.read()
+    except OSError:
+        return ""
+
+    start = html.find('<div id="auth-section"')
+    if start == -1:
+        return html
+
+    depth = 0
+    i = start
+    while i < len(html):
+        if html.startswith("<div", i):
+            depth += 1
+        elif html.startswith("</div>", i):
+            depth -= 1
+            if depth == 0:
+                return html[:start] + html[i + len("</div>"):]
+        i += 1
+    return html
+
+
 def log_user_activity(request: Request, action_type: str, details: str, status: str = "Success",
                       query: str = None, book_title: str = None,
                       book_url: str = None, source_code: str = None):
@@ -517,9 +546,13 @@ def read_root(request: Request):
         if os.path.exists(login_page):
             return FileResponse(login_page)
         return RedirectResponse(url="/login/google", status_code=303)
-    if os.path.exists(FRONTEND_INDEX):
+    if not os.path.exists(FRONTEND_INDEX):
+        return {"error": "index.html not found"}
+    if LOGIN_ENABLED:
         return FileResponse(FRONTEND_INDEX)
-    return {"error": "index.html not found"}
+    # A copy with no sign-in should not carry the markup for one either, so the whole
+    # sign-in area is left out of the page it serves.
+    return HTMLResponse(_index_without_login())
 
 
 @app.get("/search")
