@@ -7,6 +7,8 @@ import gzip
 import json
 import os
 import re
+import sys
+import tempfile
 import uuid
 from datetime import datetime
 from urllib.parse import quote
@@ -35,10 +37,22 @@ from backend.ttd import TTDScraper
 
 load_dotenv(override=True)
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# When the app is packaged as a .exe, PyInstaller unpacks the frontend files into a
+# temporary bundle directory instead of leaving them beside the source, so ask it
+# where they landed rather than guessing from __file__.
+if getattr(sys, "frozen", False):
+    BASE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(sys.executable)))
+else:
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 FRONTEND_INDEX = os.path.join(FRONTEND_DIR, "index.html")
-DOWNLOAD_DIR = os.path.join(BASE_DIR, "downloads")
+# Downloaded books are transient - saved, then handed to the browser - so in the
+# packaged app they go to the user's temp folder, which is always writable even if
+# the .exe itself sits somewhere read-only.
+if getattr(sys, "frozen", False):
+    DOWNLOAD_DIR = os.path.join(tempfile.gettempdir(), "library-app-downloads")
+else:
+    DOWNLOAD_DIR = os.path.join(BASE_DIR, "downloads")
 
 # Supabase (Postgres) connection string. Holds the users and activity tables.
 DB_URL = os.getenv("DATABASE_URL")

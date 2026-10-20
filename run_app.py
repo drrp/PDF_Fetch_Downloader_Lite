@@ -5,6 +5,7 @@ It starts the server, waits until it is actually accepting connections, then
 opens your browser at the right address.
 """
 
+import os
 import socket
 import sys
 import threading
@@ -37,15 +38,21 @@ def open_browser_when_ready(port):
 
 
 def main():
+    # A packaged copy of the app listens on this machine only, so there is nothing to
+    # keep out - open it without sign-in rather than showing a login page that cannot
+    # work without Google credentials.
+    if getattr(sys, "frozen", False) and not os.getenv("GOOGLE_CLIENT_ID"):
+        os.environ.setdefault("DEV_NO_LOGIN", "true")
+
     try:
         import uvicorn
         from backend.main import app
     except ModuleNotFoundError as e:
         print()
         print(f"  Missing package: {e.name}")
-        print("  Install the requirements first:")
+        print("  Install the requirements first, then try again:")
         print()
-        print("      .venv\\Scripts\\python.exe -m pip install -r requirements.txt")
+        print("      python -m pip install -r requirements.txt")
         print()
         return 1
 

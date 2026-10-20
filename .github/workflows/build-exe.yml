@@ -1,0 +1,44 @@
+# Builds the Windows app for you, so you do not need Python or any build tools
+# on your own computer.
+#
+# To use it: open the repository on GitHub, go to the "Actions" tab, choose
+# "Build the Windows app" on the left, and click "Run workflow". When it
+# finishes, open the run and download LibraryApp.exe from the Artifacts
+# section at the bottom of the page.
+
+name: Build the Windows app
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the requirements
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build LibraryApp.exe
+        run: pyinstaller --clean --noconfirm library-app.spec
+
+      - name: Upload the app
+        uses: actions/upload-artifact@v4
+        with:
+          name: LibraryApp-windows
+          path: dist/LibraryApp.exe
+          if-no-files-found: error
