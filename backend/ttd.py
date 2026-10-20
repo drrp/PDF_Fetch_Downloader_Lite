@@ -10,7 +10,7 @@ class BaseLibraryScraper:
     def search(self, query: str):
         raise NotImplementedError
     
-    def download(self, book_url: str, title: str, filepath: str):
+    def download(self, book_url: str, title: str, filepath: str, progress=None):
         raise NotImplementedError
 
 class TTDScraper(BaseLibraryScraper):
@@ -103,7 +103,7 @@ class TTDScraper(BaseLibraryScraper):
                 
         return all_books
 
-    def download(self, book_page_url: str, title: str, filepath: str):
+    def download(self, book_page_url: str, title: str, filepath: str, progress=None):
         match = re.search(r"id=(\d+)", book_page_url)
         if not match:
             raise Exception("Could not find publication ID for this TTD ebook.")
@@ -153,10 +153,15 @@ class TTDScraper(BaseLibraryScraper):
                         last_error = f"HTTP {resp.status_code} from {url}"
                         continue
 
+                    total = int(resp.headers.get("content-length") or 0)
+                    received = 0
                     with open(filepath, "wb") as f:
                         for chunk in resp.iter_content(chunk_size=65536):
                             if chunk:
                                 f.write(chunk)
+                                received += len(chunk)
+                                if progress:
+                                    progress(received, total)
                             if remaining() <= 0:
                                 raise requests.exceptions.Timeout("exceeded time budget")
 

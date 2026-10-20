@@ -230,6 +230,10 @@ async function savePdfLocally(url, title, source, btnElement) {
     btnElement.innerHTML = previousHtml;
   }
 
+  // A name for this download, so the page can ask the server how far it has got.
+  const jobId =
+    "j" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
   Swal.fire({
     title: "పుస్తకం డౌన్‌లోడ్ అవుతోంది",
     html: `
@@ -253,27 +257,39 @@ async function savePdfLocally(url, title, source, btnElement) {
       const fill = document.getElementById("progress-bar-fill");
       const percent = document.getElementById("progress-percent");
       const text = document.getElementById("progress-text");
+      const started = Date.now();
 
-      let currentPercent = 5;
+      const mb = (bytes) => (bytes / 1048576).toFixed(1);
 
-      window.downloadProgressInterval = setInterval(() => {
-        if (currentPercent < 90) {
-          const increment =
-            currentPercent < 40
-              ? Math.floor(Math.random() * 8) + 5
-              : Math.floor(Math.random() * 3) + 1;
-          currentPercent = Math.min(currentPercent + increment, 90);
-
-          if (fill) fill.style.width = currentPercent + "%";
-          if (percent) percent.innerText = currentPercent + "%";
-
-          if (currentPercent > 60 && text) {
-            text.innerText = "ఫైల్ స్ట్రీమ్ ప్రాసెస్ చేయబడుతోంది...";
-          } else if (currentPercent > 30 && text) {
-            text.innerText = "లైబ్రరీ నుండి డేటా సేకరించబడుతోంది...";
+      // Real numbers from the server: how much of the book it has fetched so far.
+      window.downloadProgressInterval = setInterval(async () => {
+        const waited = Math.round((Date.now() - started) / 1000);
+        try {
+          const p = await fetch(`/download-progress?job=${jobId}`).then((r) =>
+            r.json(),
+          );
+          if (p && p.known && p.received > 0) {
+            if (p.total > 0) {
+              const pct = Math.min(99, Math.round((p.received / p.total) * 100));
+              if (fill) fill.style.width = pct + "%";
+              if (percent) percent.innerText = pct + "%";
+              if (text) {
+                text.innerText =
+                  `${mb(p.received)} / ${mb(p.total)} MB`;
+              }
+            } else {
+              if (text) text.innerText = `${mb(p.received)} MB`;
+            }
+            return;
           }
+        } catch (e) {
+          // The server is busy fetching; keep waiting.
         }
-      }, 400);
+        if (text && waited > 15) {
+          text.innerText =
+            `${waited}s — పెద్ద పుస్తకాలు కొన్ని నిమిషాలు తీసుకోవచ్చు`;
+        }
+      }, 700);
     },
     willClose: () => {
       clearInterval(window.downloadProgressInterval);
@@ -282,7 +298,7 @@ async function savePdfLocally(url, title, source, btnElement) {
 
   try {
     const response = await fetch(
-      `/download-book?book_page_url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}&source=${encodeURIComponent(source)}`,
+      `/download-book?book_page_url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}&source=${encodeURIComponent(source)}&job=${jobId}`,
       {
         signal: window.currentFetchController
           ? window.currentFetchController.signal

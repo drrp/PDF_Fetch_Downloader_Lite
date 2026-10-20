@@ -133,7 +133,7 @@ class ManasuFoundationScraper:
 
         return all_books
 
-    def download(self, book_page_url: str, title: str, filepath: str):
+    def download(self, book_page_url: str, title: str, filepath: str, progress=None):
         session = requests.Session()
         session.headers.update(self.headers)
         
@@ -176,7 +176,12 @@ class ManasuFoundationScraper:
         if res.status_code != 200:
             raise Exception("Failed to download the PDF from Google Drive.")
 
+        total = int(res.headers.get("content-length") or 0)
+        received = 0
         with open(filepath, "wb") as f:
             for chunk in res.iter_content(chunk_size=32768):
-                if chunk: 
+                if chunk:
                     f.write(chunk)
+                    received += len(chunk)
+                    if progress:
+                        progress(received, total)

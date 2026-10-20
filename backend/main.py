@@ -9,6 +9,7 @@ import os
 import re
 import sys
 import tempfile
+import time
 import uuid
 from datetime import datetime
 from urllib.parse import quote
@@ -648,14 +649,55 @@ def download_link(
     return {"ok": True, "url": url}
 
 
+# Live progress for downloads that are in flight, keyed by a job id the page makes up.
+# The page polls /download-progress while the server fetches the book, so the reader
+# sees real megabytes instead of a bar that is only guessing.
+DOWNLOAD_PROGRESS = {}
+PROGRESS_TTL_SECONDS = 15 * 60
+
+
+def _prune_progress():
+    cutoff = time.time() - PROGRESS_TTL_SECONDS
+    for key in [k for k, v in DOWNLOAD_PROGRESS.items() if v.get("started", 0) < cutoff]:
+        DOWNLOAD_PROGRESS.pop(key, None)
+
+
+@app.get("/download-progress")
+def download_progress(request: Request, job: str = Query(...)):
+    if not _signed_in(request):
+        return JSONResponse({"error": "not_signed_in"}, status_code=401)
+    entry = DOWNLOAD_PROGRESS.get(job)
+    if entry is None:
+        return {"known": False, "received": 0, "total": 0, "finished": False}
+    return {
+        "known": True,
+        "received": entry.get("received", 0),
+        "total": entry.get("total", 0),
+        "finished": entry.get("finished", False),
+    }
+
+
 @app.get("/download-book")
 def download_book(
     request: Request,
     book_page_url: str = Query(...), title: str = Query(...),
-    source: str = Query("b"),
+    source: str = Query("b"), job: str = Query(""),
 ):
     if not _signed_in(request):
         return JSONResponse({"error": "not_signed_in"}, status_code=401)
+
+    progress_cb = None
+    if job:
+        _prune_progress()
+        DOWNLOAD_PROGRESS[job] = {"received": 0, "total": 0, "finished": False,
+                                  "started": time.time()}
+
+        def progress_cb(received, total):
+            entry = DOWNLOAD_PROGRESS.get(job)
+            if entry is not None:
+                entry["received"] = received
+                if total:
+                    entry["total"] = total
 
     entry = LIBRARIES.get(source)
     if entry is None:
@@ -670,8 +712,10 @@ def download_book(
         if hasattr(scraper, "consult_download"):
             scraper.consult_download(book_page_url, title, filepath)
         else:
-            scraper.download(book_page_url, title, filepath)
+            scraper.download(book_page_url, title, filepath, progress=progress_cb)
 
+        if job:
+            DOWNLOAD_PROGRESS[job]["finished"] = True
         log_user_activity(request, "Download", f"డౌన్‌లోడ్: '{title}' ({entry[0]})", "Success",
                           book_title=title, book_url=book_page_url, source_code=source)
         return {
@@ -681,6 +725,8 @@ def download_book(
             "download_url": f"/download-file?filename={quote(filename)}",
         }
     except Exception as e:
+        if job:
+            DOWNLOAD_PROGRESS[job]["finished"] = True
         log_user_activity(request, "Download", f"విఫలం: '{title}' ({entry[0]}) | {e}", "Failed",
                           book_title=title, book_url=book_page_url, source_code=source)
         return {"status": "error", "message": str(e)}

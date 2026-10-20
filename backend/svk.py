@@ -7,7 +7,7 @@ class BaseLibraryScraper:
     def search(self, query: str):
         raise NotImplementedError
     
-    def download(self, book_url: str, title: str, filepath: str):
+    def download(self, book_url: str, title: str, filepath: str, progress=None):
         raise NotImplementedError
 
 class SVKScraper(BaseLibraryScraper):
@@ -103,7 +103,7 @@ class SVKScraper(BaseLibraryScraper):
         pdf_url = f"{self.base_domain}{pdf_href}" if pdf_href.startswith("/") else pdf_href
         return pdf_url, dict(self.headers)
 
-    def download(self, book_page_url: str, title: str, filepath: str):
+    def download(self, book_page_url: str, title: str, filepath: str, progress=None):
         response = requests.get(book_page_url, headers=self.headers, timeout=15)
         soup = BeautifulSoup(response.text, "html.parser")
         pdf_href = None
@@ -127,7 +127,12 @@ class SVKScraper(BaseLibraryScraper):
         if pdf_response.status_code != 200:
             raise Exception("Failed to download PDF stream from SVK.")
 
+        total = int(pdf_response.headers.get("content-length") or 0)
+        received = 0
         with open(filepath, "wb") as f:
-            for chunk in pdf_response.iter_content(chunk_size=1024):
+            for chunk in pdf_response.iter_content(chunk_size=32768):
                 if chunk:
                     f.write(chunk)
+                    received += len(chunk)
+                    if progress:
+                        progress(received, total)

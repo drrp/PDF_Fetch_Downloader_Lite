@@ -170,7 +170,7 @@ class InternetArchiveScraper:
 
         return f"{self.download_base_url}/{identifier}/{pdf_filename}", dict(self.headers)
 
-    def download(self, book_page_url: str, title: str, filepath: str):
+    def download(self, book_page_url: str, title: str, filepath: str, progress=None):
         session = requests.Session()
         session.headers.update(self.headers)
         
@@ -198,10 +198,15 @@ class InternetArchiveScraper:
             
             res = session.get(download_url, stream=True, timeout=(15, 300))
             if res.status_code == 200:
+                total = int(res.headers.get("content-length") or 0)
+                received = 0
                 with open(filepath, "wb") as f:
                     for chunk in res.iter_content(chunk_size=32768):
                         if chunk:
                             f.write(chunk)
+                            received += len(chunk)
+                            if progress:
+                                progress(received, total)
             else:
                 raise Exception("Failed to download PDF file stream.")
                 
