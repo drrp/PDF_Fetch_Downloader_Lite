@@ -20,7 +20,13 @@ from psycopg2.extras import RealDictCursor
 from authlib.integrations.starlette_client import OAuth
 from dotenv import load_dotenv
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -66,6 +72,11 @@ COOKIE_HTTPS_ONLY = os.getenv("COOKIE_HTTPS_ONLY", "true").strip().lower() in ("
 # It is off unless you ask for it, so production is unaffected - but never enable it
 # on a public server, because it opens the app to everyone.
 DEV_NO_LOGIN = os.getenv("DEV_NO_LOGIN", "").strip().lower() in ("1", "true", "yes", "on")
+# When true, the reader's browser fetches the PDF straight from the library, which costs
+# this server no bandwidth - but most libraries send no Content-Disposition, so the
+# browser opens the PDF in a viewer instead of saving it. Off by default: the server
+# downloads the book and sends it as an attachment, which saves it immediately.
+DIRECT_DOWNLOAD = os.getenv("DIRECT_DOWNLOAD", "").strip().lower() in ("1", "true", "yes", "on")
 
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
@@ -238,6 +249,53 @@ def _with_source_label(row):
     return entry
 
 
+def _login_not_configured_page(redirect_uri: str) -> str:
+    """A plain explanation, shown when this copy has no Google credentials."""
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign-in is not set up</title>
+<style>
+  body {{ margin:0; padding:40px 16px; background:#faf7f5; color:#2b2b2b;
+         font-family: system-ui, "Segoe UI", Arial, sans-serif; line-height:1.6; }}
+  .card {{ max-width:640px; margin:0 auto; background:#fff; border:1px solid #e8d5d8;
+           border-radius:14px; padding:28px 32px; }}
+  h1 {{ color:#7a1f2b; font-size:22px; margin:0 0 8px; }}
+  h2 {{ color:#7a1f2b; font-size:16px; margin:26px 0 6px; }}
+  p {{ margin:8px 0; }}
+  code, pre {{ background:#f6f1ef; border-radius:6px;
+               font-family: ui-monospace, Consolas, monospace; }}
+  code {{ padding:1px 5px; }}
+  pre {{ padding:10px 12px; overflow-x:auto; }}
+  a {{ color:#7a1f2b; }}
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Sign-in is not set up on this copy</h1>
+    <p>This copy of the app has no Google credentials, so there is nothing for the
+       login button to do. Nothing is broken.</p>
+
+    <h2>To use the app on this computer</h2>
+    <p>Create a file called <code>.env</code> next to <code>requirements.txt</code>
+       containing this one line, then restart the app:</p>
+    <pre>DEV_NO_LOGIN=true</pre>
+    <p>You will go straight into the app, with no login page.</p>
+
+    <h2>To use real Google sign-in</h2>
+    <p>Set <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code>, and add
+       this exact address to the Authorized redirect URIs in the Google Cloud
+       Console:</p>
+    <pre>{redirect_uri}</pre>
+
+    <p><a href="/">Back to the app</a></p>
+  </div>
+</body>
+</html>"""
+
+
 def _signed_in(request: Request) -> bool:
     """Whether the caller may use the app. DEV_NO_LOGIN only relaxes this locally."""
     return bool(request.session.get("user")) or DEV_NO_LOGIN
@@ -274,6 +332,10 @@ def log_user_activity(request: Request, action_type: str, details: str, status: 
 
 @app.get("/login/google")
 async def login(request: Request):
+    if not os.getenv("GOOGLE_CLIENT_ID") or not os.getenv("GOOGLE_CLIENT_SECRET"):
+        # Without credentials there is nothing for Google to authenticate against, so
+        # say so plainly instead of throwing an error the reader cannot act on.
+        return HTMLResponse(_login_not_configured_page(str(request.url_for("auth"))))
     redirect_uri = request.url_for("auth")
     return await oauth.google.authorize_redirect(request, redirect_uri)
 
@@ -347,9 +409,10 @@ def logout(request: Request):
 def get_current_user(request: Request):
     user = request.session.get("user")
     if not user:
-        return {"logged_in": False}
+        return {"logged_in": False, "direct_download": DIRECT_DOWNLOAD}
     return {
         "logged_in": True,
+        "direct_download": DIRECT_DOWNLOAD,
         "name": user.get("name"),
         "email": user.get("email"),
         "picture": user.get("picture"),
@@ -520,6 +583,11 @@ def download_link(
     """
     if not _signed_in(request):
         return JSONResponse({"error": "not_signed_in"}, status_code=401)
+
+    if not DIRECT_DOWNLOAD:
+        # The reader is better served by a real download, so send them to the
+        # server-side path below rather than to a PDF viewer.
+        return {"ok": False, "reason": "direct_download_disabled"}
 
     entry = LIBRARIES.get(source)
     if entry is None:

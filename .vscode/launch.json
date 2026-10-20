@@ -16,7 +16,10 @@
       ],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
-      "justMyCode": false
+      "justMyCode": false,
+      "env": {
+        "DEV_NO_LOGIN": "true"
+      }
     }
   ]
 }

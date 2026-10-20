@@ -10,6 +10,11 @@ const resultsCountLabel = document.getElementById("results-count-label");
 
 // Libraries are identified by short codes, and the reader-facing label arrives with
 // each result from the server. Nothing in this file names them.
+// The server decides whether downloads go straight from the library (which saves its
+// bandwidth but usually opens a PDF viewer) or through the server (which saves the
+// file immediately). It tells us which at startup.
+let directDownload = false;
+
 const chosenSources = () =>
   Array.from(sourceBoxes)
     .filter((box) => box.checked)
@@ -185,42 +190,45 @@ async function savePdfLocally(url, title, source, btnElement) {
     `&title=${encodeURIComponent(title)}` +
     `&source=${encodeURIComponent(source)}`;
 
-  // First ask whether the library has its own download link. If it does, the book
-  // travels straight from the library to this reader and never touches our server,
-  // which is what keeps the bandwidth down.
-  const previousHtml = btnElement.innerHTML;
-  btnElement.disabled = true;
-  btnElement.innerHTML =
-    '<i class="fa-solid fa-spinner fa-spin"></i> లింక్ వెతుకుతోంది...';
-  try {
-    const link = await fetch(`/download-link?${params}`).then((r) => r.json());
-    if (link && link.ok && link.url) {
-      btnElement.disabled = false;
-      btnElement.innerHTML = '<i class="fa-solid fa-check"></i> సేవ్ అయింది';
-      btnElement.style.backgroundColor = "#1e3a8a";
+  // Optionally ask whether the library has its own download link. That saves this
+  // server all the bandwidth, but most libraries send no Content-Disposition, so the
+  // browser opens the PDF in a viewer rather than saving it - which is why it is off
+  // by default and the server-side download below is used instead.
+  if (directDownload) {
+    const previousHtml = btnElement.innerHTML;
+    btnElement.disabled = true;
+    btnElement.innerHTML =
+      '<i class="fa-solid fa-spinner fa-spin"></i> లింక్ వెతుకుతోంది...';
+    try {
+      const link = await fetch(`/download-link?${params}`).then((r) => r.json());
+      if (link && link.ok && link.url) {
+        btnElement.disabled = false;
+        btnElement.innerHTML = '<i class="fa-solid fa-check"></i> సేవ్ అయింది';
+        btnElement.style.backgroundColor = "#1e3a8a";
 
-      Swal.fire({
-        title: "డౌన్‌లోడ్ ప్రారంభమైంది!",
-        text: "మీ బ్రౌజర్ నేరుగా గ్రంథాలయం నుండి ఫైల్‌ను సేవ్ చేస్తోంది.",
-        icon: "success",
-        timer: 2500,
-        showConfirmButton: false,
-      });
+        Swal.fire({
+          title: "డౌన్‌లోడ్ ప్రారంభమైంది!",
+          text: "మీ బ్రౌజర్ నేరుగా గ్రంథాలయం నుండి ఫైల్‌ను సేవ్ చేస్తోంది.",
+          icon: "success",
+          timer: 2500,
+          showConfirmButton: false,
+        });
 
-      const direct = document.createElement("a");
-      direct.href = link.url;
-      direct.target = "_blank";
-      direct.rel = "noopener";
-      document.body.appendChild(direct);
-      direct.click();
-      direct.remove();
-      return;
+        const direct = document.createElement("a");
+        direct.href = link.url;
+        direct.target = "_blank";
+        direct.rel = "noopener";
+        document.body.appendChild(direct);
+        direct.click();
+        direct.remove();
+        return;
+      }
+    } catch (e) {
+      // No direct link available - fall back to the server-side download below.
     }
-  } catch (e) {
-    // No direct link available - fall back to the server-side download below.
+    btnElement.disabled = false;
+    btnElement.innerHTML = previousHtml;
   }
-  btnElement.disabled = false;
-  btnElement.innerHTML = previousHtml;
 
   Swal.fire({
     title: "పుస్తకం డౌన్‌లోడ్ అవుతోంది",
@@ -412,6 +420,7 @@ queryInput.addEventListener("keypress", (e) => {
 async function checkLoginStatus() {
   try {
     const data = await fetch("/api/current-user").then((r) => r.json());
+    directDownload = !!data.direct_download;
     if (!data.logged_in) return;
 
     const loginBtn = document.getElementById("google-login-btn");
