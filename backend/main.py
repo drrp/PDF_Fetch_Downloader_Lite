@@ -77,6 +77,9 @@ DEV_NO_LOGIN = os.getenv("DEV_NO_LOGIN", "").strip().lower() in ("1", "true", "y
 # browser opens the PDF in a viewer instead of saving it. Off by default: the server
 # downloads the book and sends it as an attachment, which saves it immediately.
 DIRECT_DOWNLOAD = os.getenv("DIRECT_DOWNLOAD", "").strip().lower() in ("1", "true", "yes", "on")
+# Sign-in switched off entirely, which is what a copy built as a standalone app uses:
+# no login page, no login button, and the account routes are not registered at all.
+LOGIN_ENABLED = not DEV_NO_LOGIN
 
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
@@ -409,10 +412,12 @@ def logout(request: Request):
 def get_current_user(request: Request):
     user = request.session.get("user")
     if not user:
-        return {"logged_in": False, "direct_download": DIRECT_DOWNLOAD}
+        return {"logged_in": False, "direct_download": DIRECT_DOWNLOAD,
+                "login_enabled": LOGIN_ENABLED}
     return {
         "logged_in": True,
         "direct_download": DIRECT_DOWNLOAD,
+        "login_enabled": LOGIN_ENABLED,
         "name": user.get("name"),
         "email": user.get("email"),
         "picture": user.get("picture"),
@@ -664,3 +669,21 @@ def download_file(request: Request, filename: str = Query(...)):
     if not os.path.exists(filepath):
         return {"error": "File not found"}
     return FileResponse(filepath, media_type='application/pdf', filename=safe_name)
+
+
+# With sign-in switched off, the account routes are removed rather than merely hidden,
+# so a standalone copy has no login page, no profile and no admin to stumble into.
+if not LOGIN_ENABLED:
+    ACCOUNT_ROUTES = {
+        "/login/google",
+        "/auth/callback",
+        "/logout",
+        "/profile",
+        "/user/activity-json",
+        "/admin",
+        "/admin/users-json",
+    }
+    app.router.routes = [
+        route for route in app.router.routes
+        if getattr(route, "path", None) not in ACCOUNT_ROUTES
+    ]

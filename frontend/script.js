@@ -421,6 +421,16 @@ async function checkLoginStatus() {
   try {
     const data = await fetch("/api/current-user").then((r) => r.json());
     directDownload = !!data.direct_download;
+
+    // A copy with sign-in switched off shows no login button and no account card.
+    if (!data.login_enabled) {
+      const loginBtn = document.getElementById("google-login-btn");
+      if (loginBtn) loginBtn.style.display = "none";
+      const accountCard = document.getElementById("user-profile-card");
+      if (accountCard) accountCard.style.display = "none";
+      return;
+    }
+
     if (!data.logged_in) return;
 
     const loginBtn = document.getElementById("google-login-btn");
