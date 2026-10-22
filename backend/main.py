@@ -41,6 +41,7 @@ from backend.svk import SVKScraper
 from backend.archive import InternetArchiveScraper
 from backend.manasu import ManasuFoundationScraper
 from backend.ttd import TTDScraper
+from backend import net
 
 load_dotenv(override=True)
 
@@ -729,7 +730,7 @@ def download_book(
             DOWNLOAD_PROGRESS[job]["finished"] = True
         log_user_activity(request, "Download", f"విఫలం: '{title}' ({entry[0]}) | {e}", "Failed",
                           book_title=title, book_url=book_page_url, source_code=source)
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": net.friendly(e, entry[0])}
 
 
 @app.get("/download-file")

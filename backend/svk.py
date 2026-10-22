@@ -1,4 +1,6 @@
 import requests
+
+from . import net
 import re
 from bs4 import BeautifulSoup
 
@@ -24,7 +26,7 @@ class SVKScraper(BaseLibraryScraper):
             url = f"{self.base_domain}/books"
             params = {"field_book_title_in_english_value": query, "page": page}
             try:
-                response = requests.get(url, params=params, headers=self.headers, timeout=15)
+                response = net.get(url, params=params, headers=self.headers)
                 if response.status_code != 200:
                     break
                 soup = BeautifulSoup(response.text, "html.parser")
@@ -82,7 +84,7 @@ class SVKScraper(BaseLibraryScraper):
         Lets the browser fetch the PDF straight from the library, so the file never
         passes through this server and costs it no bandwidth.
         """
-        response = requests.get(book_page_url, headers=self.headers, timeout=15)
+        response = net.get(book_page_url, headers=self.headers)
         soup = BeautifulSoup(response.text, "html.parser")
         pdf_href = None
 
@@ -104,7 +106,7 @@ class SVKScraper(BaseLibraryScraper):
         return pdf_url, dict(self.headers)
 
     def download(self, book_page_url: str, title: str, filepath: str, progress=None):
-        response = requests.get(book_page_url, headers=self.headers, timeout=15)
+        response = net.get(book_page_url, headers=self.headers)
         soup = BeautifulSoup(response.text, "html.parser")
         pdf_href = None
         
@@ -123,7 +125,8 @@ class SVKScraper(BaseLibraryScraper):
             raise Exception("Could not extract PDF link from SVK book page.")
 
         pdf_url = f"{self.base_domain}{pdf_href}" if pdf_href.startswith("/") else pdf_href
-        pdf_response = requests.get(pdf_url, headers=self.headers, stream=True)
+        pdf_response = net.get(pdf_url, headers=self.headers, stream=True,
+                              timeout=(net.CONNECT_TIMEOUT, net.READ_TIMEOUT))
         if pdf_response.status_code != 200:
             raise Exception("Failed to download PDF stream from SVK.")
 
